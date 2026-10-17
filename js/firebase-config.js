@@ -8,3 +8,7 @@ export const firebaseConfig = {
   messagingSenderId: 'YOUR_SENDER_ID',
   appId: 'YOUR_APP_ID',
 };
+
+// データの保存場所。既存の Firebase プロジェクトを他のアプリと共用しても
+// データが混ざらないよう、すべて apps/randk の下に保存する。
+export const dataRoot = ['apps', 'randk'];

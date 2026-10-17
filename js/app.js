@@ -1,6 +1,6 @@
 import {
   auth, db, isConfigured, signInWithGoogle, signOut, onAuthStateChanged,
-  collection, doc, onSnapshot, setDoc, serverTimestamp,
+  col, ref, onSnapshot, setDoc, serverTimestamp,
 } from './firebase.js';
 import { icon, googleLogo } from './icons.js';
 import { esc, toast } from './util.js';
@@ -131,7 +131,7 @@ async function start(user) {
   store.user = user;
   try {
     // 自分のメンバー情報を登録（許可されていないアカウントはここで弾かれる）
-    await setDoc(doc(db, 'members', user.uid), {
+    await setDoc(ref('members', user.uid), {
       email: user.email,
       photoURL: user.photoURL || null,
       lastLoginAt: serverTimestamp(),
@@ -153,7 +153,7 @@ async function start(user) {
     }
   };
 
-  unsubs.push(onSnapshot(collection(db, 'members'), (snap) => {
+  unsubs.push(onSnapshot(col('members'), (snap) => {
     store.members = {};
     snap.forEach((d) => {
       const m = d.data();
@@ -161,12 +161,12 @@ async function start(user) {
     });
     // 名前未設定ならGoogleの表示名を初期値にする
     if (!snap.docs.find((d) => d.id === user.uid)?.data().name && user.displayName) {
-      setDoc(doc(db, 'members', user.uid), { name: user.displayName }, { merge: true });
+      setDoc(ref('members', user.uid), { name: user.displayName }, { merge: true });
     }
     update('members');
   }));
 
-  unsubs.push(onSnapshot(doc(db, 'settings', 'main'), (snap) => {
+  unsubs.push(onSnapshot(ref('settings', 'main'), (snap) => {
     store.settings = snap.data() || {};
     update('settings');
   }));

@@ -1,8 +1,8 @@
-import { auth, signOut, doc, setDoc } from '../firebase.js';
+import { auth, signOut, ref, setDoc } from '../firebase.js';
 import { icon } from '../icons.js';
 import { esc, toast } from '../util.js';
 
-export function mount(el, { store, db }) {
+export function mount(el, { store }) {
   function render() {
     const me = store.member(store.user.uid);
     const members = store.memberList();
@@ -55,7 +55,7 @@ export function mount(el, { store, db }) {
       e.preventDefault();
       const name = e.target.elements.name.value.trim();
       if (!name) return;
-      await setDoc(doc(db, 'members', store.user.uid), { name }, { merge: true })
+      await setDoc(ref('members', store.user.uid), { name }, { merge: true })
         .then(() => toast('保存しました'))
         .catch((err) => toast(`保存に失敗しました (${err.code})`));
     });
@@ -67,7 +67,7 @@ export function mount(el, { store, db }) {
     });
     range?.addEventListener('change', async () => {
       const v = Number(range.value);
-      await setDoc(doc(db, 'settings', 'main'), {
+      await setDoc(ref('settings', 'main'), {
         shares: { [store.user.uid]: v, [partner.uid]: 100 - v },
       }, { merge: true }).catch((err) => toast(`保存に失敗しました (${err.code})`));
     });

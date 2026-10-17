@@ -7,7 +7,7 @@ import {
   collection, doc, onSnapshot, setDoc, addDoc, updateDoc, deleteDoc, getDocs,
   writeBatch, serverTimestamp, query, orderBy,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { firebaseConfig } from './firebase-config.js';
+import { firebaseConfig, dataRoot } from './firebase-config.js';
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
@@ -16,6 +16,10 @@ export const auth = getAuth(app);
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
 });
+
+// アプリ用の領域（dataRoot）の下のコレクション・ドキュメントを指す
+export const col = (...segs) => collection(db, ...dataRoot, ...segs);
+export const ref = (...segs) => doc(db, ...dataRoot, ...segs);
 
 export const isConfigured = !firebaseConfig.apiKey.startsWith('YOUR_');
 

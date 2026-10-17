@@ -1,5 +1,5 @@
 import {
-  collection, doc, onSnapshot, setDoc, addDoc, updateDoc, deleteDoc, getDocs,
+  col, ref, doc, onSnapshot, setDoc, addDoc, updateDoc, deleteDoc, getDocs,
   writeBatch, serverTimestamp,
 } from '../firebase.js';
 import { icon } from '../icons.js';
@@ -52,8 +52,8 @@ export function mount(el, { store, db }) {
     if (act === 'settle') toggleSettled();
   });
 
-  const billsRef = () => collection(db, 'months', month, 'bills');
-  const monthRef = () => doc(db, 'months', month);
+  const billsRef = () => col('months', month, 'bills');
+  const monthRef = () => ref('months', month);
 
   function setMonth(key) {
     month = key;
@@ -266,7 +266,7 @@ export function mount(el, { store, db }) {
 
   async function copyPrevMonth() {
     const prev = shiftMonth(month, -1);
-    const snap = await getDocs(collection(db, 'months', prev, 'bills'));
+    const snap = await getDocs(col('months', prev, 'bills'));
     if (snap.empty) return toast(`${monthLabel(prev)}の項目がありません`);
     const batch = writeBatch(db);
     snap.docs.forEach((d, i) => {

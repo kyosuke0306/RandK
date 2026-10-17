@@ -1,18 +1,19 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // ここに2人のGoogleアカウントのメールアドレスを書く（小文字）
-    function isMember() {
-      return request.auth != null
+
+    // ===== ふたりの家計（apps/randk 以下）=====
+    // 既存プロジェクトを使う場合は、この match ブロックだけを既存ルールに追加する。
+    match /apps/randk/{document=**} {
+      // ここに2人のGoogleアカウントのメールアドレスを書く（小文字）
+      allow read, write: if request.auth != null
         && request.auth.token.email_verified == true
         && request.auth.token.email in [
           'you@gmail.com',
           'partner@gmail.com'
         ];
     }
+    // ===== ここまで =====
 
-    match /{document=**} {
-      allow read, write: if isMember();
-    }
   }
 }
