@@ -63,6 +63,16 @@ python3 -m http.server 8000
 
 `localhost` は Firebase の承認済みドメインに最初から入っています。
 
+## 更新を公開するとき
+
+ブラウザが古いファイルを使い続けないよう、push する前に必ず実行します。
+
+```sh
+python3 scripts/stamp.py   # index.html の JS/CSS の URL に ?v=ハッシュ を付け直す
+```
+
+`main` に push すると GitHub Pages に1〜2分で反映されます。
+
 ## データ構造（Firestore）
 
 すべて `apps/randk/` の下（`js/firebase-config.js` の `dataRoot` で変更可）。

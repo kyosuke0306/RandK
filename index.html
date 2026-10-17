@@ -11,11 +11,26 @@
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon.svg">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=d78e6a1f">
 </head>
 <body>
   <div id="app"></div>
   <div id="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="js/app.js"></script>
+  <!-- scripts/stamp.py が自動で書き換える（キャッシュ対策） -->
+  <script type="importmap">
+{
+  "imports": {
+    "./js/app.js": "./js/app.js?v=0db6ae08",
+    "./js/firebase-config.js": "./js/firebase-config.js?v=01944c2f",
+    "./js/firebase.js": "./js/firebase.js?v=0aa6346b",
+    "./js/icons.js": "./js/icons.js?v=97de7ec4",
+    "./js/util.js": "./js/util.js?v=22fe5ac5",
+    "./js/views/home.js": "./js/views/home.js?v=f43685a9",
+    "./js/views/money.js": "./js/views/money.js?v=645abffe",
+    "./js/views/settings.js": "./js/views/settings.js?v=7348c91b"
+  }
+}
+  </script>
+  <script type="module">import './js/app.js';</script>
 </body>
 </html>
