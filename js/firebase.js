@@ -5,7 +5,7 @@ import {
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   collection, doc, onSnapshot, setDoc, addDoc, updateDoc, deleteDoc, getDoc, getDocs,
-  writeBatch, runTransaction, serverTimestamp, query, where, orderBy, limit,
+  writeBatch, runTransaction, serverTimestamp, query, where, orderBy, limit, increment,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig, dataRoot } from './firebase-config.js';
 
@@ -32,5 +32,5 @@ export function signInWithGoogle() {
 export {
   signOut, onAuthStateChanged,
   collection, doc, onSnapshot, setDoc, addDoc, updateDoc, deleteDoc, getDoc, getDocs,
-  writeBatch, runTransaction, serverTimestamp, query, where, orderBy, limit,
+  writeBatch, runTransaction, serverTimestamp, query, where, orderBy, limit, increment,
 };

@@ -1,9 +1,10 @@
 import {
-  db, col, ref, doc, onSnapshot, updateDoc, deleteDoc, addDoc, getDocs,
-  writeBatch, runTransaction, serverTimestamp,
+  db, col, ref, doc, onSnapshot, updateDoc, setDoc, getDocs,
+  writeBatch, runTransaction, serverTimestamp, query, where, increment,
 } from '../firebase.js';
 import { icon } from '../icons.js';
 import { esc, yen, monthKey, todayStr, shiftMonth, monthLabel, toast, h } from '../util.js';
+import { processImage, openImageViewer, dateLabel } from '../image.js';
 
 export const CATEGORIES = [
   { id: 'rent', label: '家賃', icon: 'home' },
@@ -126,6 +127,68 @@ async function setupMonth(month, store) {
       });
     });
   });
+}
+
+// 金額入力用のテンキー（スマホのキーボードを出さない）
+function openKeypad(value, onDone) {
+  let digits = value ? String(value) : '';
+  const dlg = h(`
+    <dialog class="keypad">
+      <div class="keypad-display"><small>金額</small><span data-display></span></div>
+      <div class="keypad-keys">
+        ${['7', '8', '9', '4', '5', '6', '1', '2', '3', '00', '0'].map((k) => `<button type="button" data-key="${k}">${k}</button>`).join('')}
+        <button type="button" data-key="back" aria-label="1文字消す">${icon('backspace', 24)}</button>
+      </div>
+      <div class="keypad-foot">
+        <button type="button" class="btn" data-key="clear">クリア</button>
+        <button type="button" class="btn btn-primary" data-key="done">${icon('check', 18)}<span>決定</span></button>
+      </div>
+    </dialog>`);
+  document.body.appendChild(dlg);
+  const $display = dlg.querySelector('[data-display]');
+  const show = () => { $display.textContent = yen(digits || 0); };
+  show();
+  dlg.addEventListener('click', (e) => {
+    if (e.target === dlg) return dlg.close();
+    const key = e.target.closest('[data-key]')?.dataset.key;
+    if (!key) return;
+    if (key === 'done') {
+      onDone(digits === '' ? null : Number(digits));
+      return dlg.close();
+    }
+    if (key === 'clear') digits = '';
+    else if (key === 'back') digits = digits.slice(0, -1);
+    else if ((digits + key).replace(/^0+/, '').length <= 9) digits = (digits + key).replace(/^0+/, '');
+    show();
+  });
+  dlg.addEventListener('close', () => dlg.remove());
+  dlg.showModal();
+}
+
+// 領収書は photos と同じく、サムネイル（receipts）と拡大用（receiptData）に分けて保存する
+const billKey = (month, billId) => `${month}/${billId}`;
+
+async function uploadReceipts(files, month, billId, store) {
+  for (const file of files) {
+    const { full, thumb } = await processImage(file);
+    const { id } = doc(col('receipts'));
+    const batch = writeBatch(db);
+    batch.set(ref('receiptData', id), { data: full.data });
+    batch.set(ref('receipts', id), {
+      bill: billKey(month, billId), month, billId, thumb: thumb.data,
+      createdBy: store.user.uid, createdMs: Date.now(), createdAt: serverTimestamp(),
+    });
+    batch.update(ref('months', month, 'bills', billId), { receiptCount: increment(1) });
+    await batch.commit();
+  }
+}
+
+async function deleteReceipt(r) {
+  const batch = writeBatch(db);
+  batch.delete(ref('receipts', r.id));
+  batch.delete(ref('receiptData', r.id));
+  batch.update(ref('months', r.month, 'bills', r.billId), { receiptCount: increment(-1) });
+  await batch.commit();
 }
 
 export function mount(el, { store }) {
@@ -316,6 +379,7 @@ export function mount(el, { store }) {
       const meta = [
         statusChip(b),
         b.dueDate && `<span class="${overdue ? 'overdue' : ''}">${icon('calendar', 13)}${shortDate(b.dueDate)}${overdue ? ' 期限切れ' : ''}</span>`,
+        b.receiptCount > 0 && `<span>${icon('receipt', 13)}${b.receiptCount}</span>`,
       ].filter(Boolean).join('');
       const split = splitText(b.amount);
       return `
@@ -379,37 +443,25 @@ export function mount(el, { store }) {
   function openEditor(bill) {
     const isNew = !bill;
     const b = bill || { category: 'other', paid: false, settled: false, payer: null };
+    const billId = isNew ? doc(billsRef()).id : b.id;
+    const editMonth = month;
     const members = store.memberList();
+    let amount = b.amount ?? null;
+    let receipts = [];
+    const pending = []; // 保存時にアップロードする領収書 { file, url }
+
     const dlg = h(`
       <dialog class="sheet">
         <form method="dialog">
           <header class="sheet-head">
-            <h2>${isNew ? '項目を追加' : '項目を編集'}</h2>
+            <h2>${isNew ? '項目を追加' : esc(b.name || cat(b.category).label)}</h2>
             <button type="button" class="icon-btn" data-close aria-label="閉じる">${icon('close')}</button>
           </header>
-          <div class="cat-picker">
-            ${CATEGORIES.map((c) => `
-              <label class="cat-option">
-                <input type="radio" name="category" value="${c.id}" ${c.id === cat(b.category).id ? 'checked' : ''}>
-                <span class="cat-icon cat-${c.id}">${icon(c.icon, 20)}</span>
-                <span>${c.label}</span>
-              </label>`).join('')}
-          </div>
-          <label class="field">
-            <span>名前</span>
-            <input name="name" value="${esc(b.name || '')}" placeholder="${esc(cat(b.category).label)}" maxlength="40">
-          </label>
-          <div class="field-row">
-            <label class="field">
-              <span>金額（円）</span>
-              <input name="amount" type="number" inputmode="numeric" min="0" step="1" value="${b.amount ?? ''}" placeholder="0">
-            </label>
-            <label class="field">
-              <span>支払期限</span>
-              <input name="dueDate" type="date" value="${b.dueDate || ''}">
-            </label>
-          </div>
-          <p class="split-preview label"></p>
+          <button type="button" class="amount-btn" data-amount>
+            <small>金額</small>
+            <span class="amount-value"></span>
+            <span class="split-preview"></span>
+          </button>
           <fieldset class="field">
             <span>支払う人・支払った人</span>
             <div class="segmented">
@@ -426,10 +478,43 @@ export function mount(el, { store }) {
             <span>精算済み <small class="muted">2人の間でお金を渡し終えた</small></span>
             <input type="checkbox" name="settled" class="switch" ${b.settled ? 'checked' : ''}>
           </label>
+          <div class="field">
+            <span>領収書</span>
+            <div class="receipt-row">
+              <span class="receipt-thumbs"></span>
+              <label class="receipt-add" aria-label="領収書を撮影">
+                ${icon('camera', 22)}<small>撮影</small>
+                <input type="file" accept="image/*" capture="environment" hidden data-pick>
+              </label>
+              <label class="receipt-add" aria-label="写真から選ぶ">
+                ${icon('image', 22)}<small>選ぶ</small>
+                <input type="file" accept="image/*" multiple hidden data-pick>
+              </label>
+            </div>
+          </div>
           <label class="field">
-            <span>メモ</span>
-            <input name="note" value="${esc(b.note || '')}" maxlength="100" placeholder="検針期間、口座振替など">
+            <span>支払期限</span>
+            <input name="dueDate" type="date" value="${b.dueDate || ''}">
           </label>
+          <details class="more" ${isNew ? 'open' : ''}>
+            <summary>種類・名前・メモ</summary>
+            <div class="cat-picker">
+              ${CATEGORIES.map((c) => `
+                <label class="cat-option">
+                  <input type="radio" name="category" value="${c.id}" ${c.id === cat(b.category).id ? 'checked' : ''}>
+                  <span class="cat-icon cat-${c.id}">${icon(c.icon, 20)}</span>
+                  <span>${c.label}</span>
+                </label>`).join('')}
+            </div>
+            <label class="field">
+              <span>名前</span>
+              <input name="name" value="${esc(b.name || '')}" placeholder="${esc(cat(b.category).label)}" maxlength="40">
+            </label>
+            <label class="field">
+              <span>メモ</span>
+              <input name="note" value="${esc(b.note || '')}" maxlength="100" placeholder="検針期間、口座振替など">
+            </label>
+          </details>
           <footer class="sheet-foot">
             ${isNew ? '' : `<button type="button" class="btn btn-danger" data-delete>${icon('trash', 18)}<span>削除</span></button>`}
             <button type="submit" class="btn btn-primary">${icon('check', 18)}<span>保存</span></button>
@@ -439,14 +524,68 @@ export function mount(el, { store }) {
     document.body.appendChild(dlg);
     const form = dlg.querySelector('form');
     const f = form.elements;
-    const $split = form.querySelector('.split-preview');
-    const updateSplit = () => {
-      const text = splitText(Number(f.amount.value));
-      $split.textContent = text ? `2人で割ると ${text}` : '';
-    };
-    updateSplit();
 
-    form.addEventListener('input', (e) => { if (e.target.name === 'amount') updateSplit(); });
+    const showAmount = () => {
+      form.querySelector('.amount-value').innerHTML = amount != null ? yen(amount) : '<span class="muted">タップして入力</span>';
+      const text = splitText(amount);
+      form.querySelector('.split-preview').textContent = text ? `2人で割ると ${text}` : '';
+    };
+    showAmount();
+    form.querySelector('[data-amount]').addEventListener('click', () => {
+      openKeypad(amount, (v) => { amount = v; showAmount(); });
+    });
+
+    const $thumbs = form.querySelector('.receipt-thumbs');
+    const renderReceipts = () => {
+      $thumbs.innerHTML = [
+        ...receipts.map((r) => `<button type="button" class="receipt-thumb" data-receipt="${r.id}"><img src="${r.thumb}" alt="領収書"></button>`),
+        ...pending.map((p, i) => `<button type="button" class="receipt-thumb pending" data-pending="${i}"><img src="${p.url}" alt="領収書（未保存）"></button>`),
+      ].join('');
+    };
+    const unsubReceipts = isNew ? null : onSnapshot(
+      query(col('receipts'), where('bill', '==', billKey(editMonth, billId))),
+      (snap) => {
+        receipts = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((x, y) => x.createdMs - y.createdMs);
+        renderReceipts();
+      },
+    );
+    form.querySelectorAll('[data-pick]').forEach((input) => {
+      input.addEventListener('change', () => {
+        [...input.files].forEach((file) => pending.push({ file, url: URL.createObjectURL(file) }));
+        input.value = '';
+        renderReceipts();
+      });
+    });
+    $thumbs.addEventListener('click', (e) => {
+      const t = e.target.closest('button');
+      if (!t) return;
+      if (t.dataset.receipt) {
+        const r = receipts.find((x) => x.id === t.dataset.receipt);
+        openImageViewer({
+          thumb: r.thumb,
+          fullRef: ref('receiptData', r.id),
+          title: `領収書 ${b.name || cat(b.category).label}`,
+          subtitle: dateLabel(r.createdMs),
+          fileName: `receipt-${editMonth}-${r.id}.jpg`,
+          deleteMessage: 'この領収書を削除しますか？',
+          onDelete: () => deleteReceipt(r).catch((err) => toast(`削除に失敗しました (${err.code})`)),
+        });
+      } else {
+        const i = Number(t.dataset.pending);
+        openImageViewer({
+          thumb: pending[i].url,
+          title: '領収書（未保存）',
+          subtitle: '保存すると2人で見られます',
+          deleteMessage: 'この写真を取り消しますか？',
+          onDelete: () => {
+            URL.revokeObjectURL(pending[i].url);
+            pending.splice(i, 1);
+            renderReceipts();
+          },
+        });
+      }
+    });
+
     form.addEventListener('change', (e) => {
       if (e.target.name === 'category') f.name.placeholder = cat(e.target.value).label;
       // 精算済みなら支払済みでもある
@@ -454,13 +593,22 @@ export function mount(el, { store }) {
       if (e.target.name === 'paid' && !f.paid.checked) f.settled.checked = false;
     });
     dlg.querySelector('[data-close]').addEventListener('click', () => dlg.close());
-    dlg.addEventListener('close', () => dlg.remove());
+    dlg.addEventListener('close', () => {
+      unsubReceipts?.();
+      dlg.remove();
+    });
     dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
 
     dlg.querySelector('[data-delete]')?.addEventListener('click', async () => {
-      if (!confirm(`「${b.name || cat(b.category).label}」を削除しますか？`)) return;
+      if (!confirm(`「${b.name || cat(b.category).label}」を削除しますか？領収書も削除されます。`)) return;
       dlg.close();
-      await deleteDoc(billRef(b.id)).catch((err) => toast(`削除に失敗しました (${err.code})`));
+      const batch = writeBatch(db);
+      receipts.forEach((r) => {
+        batch.delete(ref('receipts', r.id));
+        batch.delete(ref('receiptData', r.id));
+      });
+      batch.delete(ref('months', editMonth, 'bills', billId));
+      await batch.commit().catch((err) => toast(`削除に失敗しました (${err.code})`));
     });
 
     form.addEventListener('submit', async (e) => {
@@ -471,7 +619,7 @@ export function mount(el, { store }) {
       const data = {
         category,
         name: f.name.value.trim() || cat(category).label,
-        amount: f.amount.value === '' ? null : Math.round(Number(f.amount.value)),
+        amount,
         dueDate: f.dueDate.value || null,
         payer: f.payer.value || (paid ? store.user.uid : null),
         paid,
@@ -483,16 +631,28 @@ export function mount(el, { store }) {
       if (!paid) data.paidAt = null;
       if (settled && !b.settled) data.settledAt = serverTimestamp();
       if (!settled) data.settledAt = null;
+      const files = pending.map((p) => p.file);
       dlg.close();
       try {
-        if (isNew) await addDoc(billsRef(), { ...data, order: catIndex(category), createdAt: serverTimestamp() });
-        else await updateDoc(billRef(b.id), data);
+        const target = ref('months', editMonth, 'bills', billId);
+        if (isNew) await setDoc(target, { ...data, order: catIndex(category), createdAt: serverTimestamp() });
+        else await updateDoc(target, data);
+        if (files.length) {
+          toast('領収書を保存しています');
+          await uploadReceipts(files, editMonth, billId, store);
+          toast('領収書を保存しました');
+        }
       } catch (err) {
-        toast(`保存に失敗しました (${err.code})`);
+        console.error(err);
+        toast(`保存に失敗しました${err.code ? ` (${err.code})` : ''}`);
+      } finally {
+        pending.forEach((p) => URL.revokeObjectURL(p.url));
       }
     });
 
     dlg.showModal();
+    // 金額がまだなら、すぐテンキーを出す
+    if (!isNew && b.amount == null) openKeypad(null, (v) => { amount = v; showAmount(); });
   }
 
   const unsubStore = store.subscribe(render);

@@ -434,3 +434,48 @@ dialog.viewer::backdrop { background: #000; }
 .date-badge.today { background: var(--primary); color: var(--primary-ink); }
 .date-badge.today small { color: inherit; }
 .wordmark { font-size: 28px; font-weight: 800; letter-spacing: .14em; margin-right: -.14em; }
+
+/* ---- 金額ボタン・テンキー ---- */
+.amount-btn {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%;
+  padding: 12px 16px; border-radius: 14px; border: 1.5px solid var(--border); background: var(--bg); text-align: left;
+}
+.amount-btn small { font-size: 12px; color: var(--muted); font-weight: 600; }
+.amount-value { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.amount-value .muted { font-size: 17px; font-weight: 500; }
+.amount-btn .split-preview { font-size: 12px; color: var(--muted); }
+dialog.keypad {
+  width: 100%; max-width: 420px; margin: auto auto 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+  border: 0; border-radius: 20px 20px 0 0; background: var(--surface); color: var(--text);
+}
+@media (min-width: 600px) { dialog.keypad { margin: auto; border-radius: 20px; } }
+dialog.keypad::backdrop { background: rgba(0, 0, 0, .35); }
+.keypad-display { display: flex; flex-direction: column; align-items: flex-end; padding: 4px 8px 12px; }
+.keypad-display small { align-self: flex-start; color: var(--muted); font-weight: 600; }
+.keypad-display span { font-size: 38px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.keypad-keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.keypad-keys button {
+  height: 58px; border: 0; border-radius: 14px; background: var(--surface-2);
+  font-size: 24px; font-weight: 600; display: grid; place-items: center; font-variant-numeric: tabular-nums;
+}
+.keypad-keys button:active { background: var(--border); }
+.keypad-foot { display: grid; grid-template-columns: 1fr 2fr; gap: 8px; margin-top: 10px; }
+.keypad-foot .btn { min-height: 52px; }
+
+/* ---- 領収書 ---- */
+.receipt-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
+.receipt-thumbs { display: contents; }
+.receipt-thumb, .receipt-add {
+  width: 64px; height: 64px; flex-shrink: 0; border-radius: 12px; overflow: hidden; padding: 0;
+}
+.receipt-thumb { border: 1px solid var(--border); background: var(--surface-2); }
+.receipt-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.receipt-thumb.pending { outline: 2px dashed var(--primary); outline-offset: -2px; }
+.receipt-add {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  border: 1.5px dashed var(--border); color: var(--muted); cursor: pointer;
+}
+.receipt-add small { font-size: 10px; font-weight: 600; }
+details.more { border-top: 1px solid var(--border); padding-top: 10px; }
+details.more summary { cursor: pointer; font-size: 13px; color: var(--muted); font-weight: 600; padding: 4px 0; }
+details.more[open] { display: flex; flex-direction: column; gap: 14px; }

@@ -17,5 +17,6 @@ GitHub Pages（`main` / root）で https://kyosuke0306.github.io/RandK/ に公�
 - Firestore のデータはすべて `apps/randk/` の下（`js/firebase.js` の `col` / `ref` を使う）。Firebase プロジェクト `kakarituke` を他アプリと共用しているため
 - 本物のメールアドレスをリポジトリに書かない（`firestore.rules` は見本。実際のルールは Firebase コンソールで管理）
 - 画面は ホーム / 家計簿 / 買い物 / 写真 / 予定（下のタブ）と 設定（`tab: false`、ホーム右上から）
-- 写真は Firebase Storage（Blaze プラン必須）を使わず、縮小して Firestore の `photos`（サムネイル）と `photoData`（拡大用）に保存している
+- 写真は Firebase Storage（Blaze プラン必須）を使わず、縮小して Firestore の `photos`（サムネイル）と `photoData`（拡大用）に保存している。領収書も同じ方式で `receipts` / `receiptData`（処理は `js/image.js`）
+- 金額の入力はテキスト入力を使わず、家計簿のテンキー（`openKeypad`）で入力する
 - 新しい機能は `js/views/` に `mount(el, { store, db, views, navigate })` を作り、`js/app.js` の `VIEWS` に追加する

@@ -1,54 +1,11 @@
 import {
-  db, col, ref, doc, getDoc, onSnapshot, updateDoc, writeBatch, query, orderBy, limit, serverTimestamp,
+  db, col, ref, doc, onSnapshot, updateDoc, writeBatch, query, orderBy, limit, serverTimestamp,
 } from '../firebase.js';
 import { icon } from '../icons.js';
-import { esc, toast, h } from '../util.js';
+import { esc, toast } from '../util.js';
+import { processImage, openImageViewer, dateLabel } from '../image.js';
 
-// 写真は Firebase Storage を使わず、縮小して Firestore に保存する（無料枠で使えるように）。
-// 一覧用の小さい画像は photos、元の大きさの画像は photoData に分けて、一覧を軽くしている。
-const FULL_MAX = 1600;
-const THUMB_MAX = 400;
-const DOC_LIMIT = 900_000; // Firestore の1ドキュメント上限（1MiB）より少し小さく
 const PAGE = 60;
-
-async function loadImage(file) {
-  try {
-    return await createImageBitmap(file, { imageOrientation: 'from-image' });
-  } catch {
-    const url = URL.createObjectURL(file);
-    try {
-      const img = new Image();
-      img.src = url;
-      await img.decode();
-      return img;
-    } finally {
-      URL.revokeObjectURL(url);
-    }
-  }
-}
-
-function encode(img, max, quality, maxChars) {
-  let size = max;
-  for (;;) {
-    const scale = Math.min(1, size / Math.max(img.width, img.height));
-    const w = Math.round(img.width * scale);
-    const hgt = Math.round(img.height * scale);
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = hgt;
-    canvas.getContext('2d').drawImage(img, 0, 0, w, hgt);
-    for (let q = quality; q >= 0.45; q -= 0.1) {
-      const data = canvas.toDataURL('image/jpeg', q);
-      if (data.length <= maxChars) return { data, w, h: hgt };
-    }
-    size = Math.round(size * 0.75);
-  }
-}
-
-const dateLabel = (ms) => {
-  const d = new Date(ms);
-  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-};
 
 export function mount(el, { store }) {
   let photos = null;
@@ -95,10 +52,7 @@ export function mount(el, { store }) {
     uploading++;
     render();
     try {
-      const img = await loadImage(file);
-      const full = encode(img, FULL_MAX, 0.82, DOC_LIMIT);
-      const thumb = encode(img, THUMB_MAX, 0.7, 120_000);
-      img.close?.();
+      const { full, thumb } = await processImage(file);
       const { id } = doc(col('photos'));
       const batch = writeBatch(db);
       batch.set(ref('photoData', id), { data: full.data });
@@ -142,66 +96,25 @@ export function mount(el, { store }) {
 
   function openViewer(p) {
     if (!p) return;
-    const by = store.member(p.createdBy);
-    const dlg = h(`
-      <dialog class="viewer">
-        <header class="viewer-head">
-          <button class="icon-btn" data-close aria-label="閉じる">${icon('close')}</button>
-          <span class="viewer-meta">${by ? esc(by.name) : ''}<br><small>${dateLabel(p.createdMs)}</small></span>
-          <button class="icon-btn" data-share aria-label="保存・共有">${icon('share')}</button>
-          <button class="icon-btn" data-delete aria-label="削除">${icon('trash')}</button>
-        </header>
-        <div class="viewer-body"><img src="${p.thumb}" alt=""></div>
-        <footer class="viewer-foot">
-          <input data-caption value="${esc(p.caption || '')}" placeholder="ひとことを追加" maxlength="100">
-        </footer>
-      </dialog>`);
-    document.body.appendChild(dlg);
-    const $img = dlg.querySelector('.viewer-body img');
-    let full = null;
-    getDoc(ref('photoData', p.id)).then((snap) => {
-      full = snap.data()?.data;
-      if (full) $img.src = full;
+    openImageViewer({
+      thumb: p.thumb,
+      fullRef: ref('photoData', p.id),
+      title: store.member(p.createdBy)?.name || '',
+      subtitle: dateLabel(p.createdMs),
+      fileName: `photo-${p.id}.jpg`,
+      caption: {
+        value: p.caption,
+        onSave: (caption) => updateDoc(ref('photos', p.id), { caption })
+          .catch((err) => toast(`保存に失敗しました (${err.code})`)),
+      },
+      deleteMessage: 'この写真を削除しますか？2人とも見られなくなります。',
+      onDelete: () => {
+        const batch = writeBatch(db);
+        batch.delete(ref('photos', p.id));
+        batch.delete(ref('photoData', p.id));
+        batch.commit().catch((err) => toast(`削除に失敗しました (${err.code})`));
+      },
     });
-
-    dlg.querySelector('[data-close]').addEventListener('click', () => dlg.close());
-    dlg.addEventListener('close', () => dlg.remove());
-    const $caption = dlg.querySelector('[data-caption]');
-    const saveCaption = () => {
-      const caption = $caption.value.trim();
-      if (caption !== (p.caption || '')) {
-        p.caption = caption;
-        updateDoc(ref('photos', p.id), { caption }).catch((err) => toast(`保存に失敗しました (${err.code})`));
-      }
-    };
-    $caption.addEventListener('change', saveCaption);
-    $caption.addEventListener('keydown', (e) => { if (e.key === 'Enter') $caption.blur(); });
-
-    dlg.querySelector('[data-share]').addEventListener('click', async () => {
-      const src = full || p.thumb;
-      const blob = await (await fetch(src)).blob();
-      const file = new File([blob], `photo-${p.id}.jpg`, { type: 'image/jpeg' });
-      if (navigator.canShare?.({ files: [file] })) {
-        navigator.share({ files: [file] }).catch(() => {});
-      } else {
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = file.name;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-      }
-    });
-
-    dlg.querySelector('[data-delete]').addEventListener('click', async () => {
-      if (!confirm('この写真を削除しますか？2人とも見られなくなります。')) return;
-      dlg.close();
-      const batch = writeBatch(db);
-      batch.delete(ref('photos', p.id));
-      batch.delete(ref('photoData', p.id));
-      await batch.commit().catch((err) => toast(`削除に失敗しました (${err.code})`));
-    });
-
-    dlg.showModal();
   }
 
   function listen() {
