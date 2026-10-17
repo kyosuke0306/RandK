@@ -2,7 +2,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ===== ふたりの家計（apps/randk 以下）=====
+    // ===== FUTARI（apps/randk 以下）=====
     // 既存プロジェクトを使う場合は、この match ブロックだけを既存ルールに追加する。
     match /apps/randk/{document=**} {
       // ここに2人のGoogleアカウントのメールアドレスを書く（小文字）

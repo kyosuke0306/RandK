@@ -433,3 +433,4 @@ dialog.viewer::backdrop { background: #000; }
 .date-badge small { font-size: 9px; font-weight: 600; color: var(--muted); }
 .date-badge.today { background: var(--primary); color: var(--primary-ink); }
 .date-badge.today small { color: inherit; }
+.wordmark { font-size: 28px; font-weight: 800; letter-spacing: .14em; margin-right: -.14em; }

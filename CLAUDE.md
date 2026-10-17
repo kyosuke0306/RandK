@@ -1,4 +1,4 @@
-# ふたりの家計（RandK）
+# FUTARI（RandK）
 
 カップル2人用の家計共有アプリ。ビルドなしの静的サイト（ES Modules）+ Firebase（Google ログイン・Firestore）。
 GitHub Pages（`main` / root）で https://kyosuke0306.github.io/RandK/ に公開している。

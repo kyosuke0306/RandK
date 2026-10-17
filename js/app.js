@@ -112,8 +112,8 @@ function renderLogin() {
   root.innerHTML = `
     <div class="center-screen">
       <div class="logo-mark">${icon('heart', 32)}</div>
-      <h1>ふたりの家計</h1>
-      <p class="muted">家賃や光熱費の支払いを2人で共有</p>
+      <h1 class="wordmark">FUTARI</h1>
+      <p class="muted">家計簿・買い物・写真・予定を2人で共有</p>
       ${inAppBrowser ? renderInAppWarning() : ''}
       <button class="btn btn-google" id="login">${googleLogo}<span>Googleでログイン</span></button>
     </div>`;
