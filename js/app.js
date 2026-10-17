@@ -9,16 +9,20 @@ import * as moneyView from './views/money.js';
 import * as shoppingView from './views/shopping.js';
 import * as photosView from './views/photos.js';
 import * as calendarView from './views/calendar.js';
+import * as todoView from './views/todo.js';
+import * as askView from './views/ask.js';
 import * as settingsView from './views/settings.js';
 
 // 画面（タブ）の一覧。機能を増やすときはここに追加する。
 const VIEWS = [
   { id: 'home', label: 'ホーム', icon: 'home', view: homeView },
   { id: 'money', label: '家計簿', icon: 'wallet', desc: '家賃・光熱費の支払いと精算', view: moneyView },
+  { id: 'todo', label: 'TODO', icon: 'listCheck', desc: '2人のやること', view: todoView },
   { id: 'shopping', label: '買い物', icon: 'cart', desc: '買いたいものをメモ', view: shoppingView },
   { id: 'photos', label: '写真', icon: 'camera', desc: '撮った写真を2人で見る', view: photosView },
   { id: 'calendar', label: '予定', icon: 'calendar', desc: '2人で遊ぶ予定', view: calendarView },
   // tab: false は下のタブに出さない（トップ画面から開く）
+  { id: 'ask', label: '質問', icon: 'sparkle', desc: 'アプリの情報をAIに聞く', view: askView, tab: false },
   { id: 'settings', label: '設定', icon: 'settings', desc: '表示名・負担の割合', view: settingsView, tab: false },
 ];
 

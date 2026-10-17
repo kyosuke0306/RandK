@@ -479,3 +479,54 @@ dialog.keypad::backdrop { background: rgba(0, 0, 0, .35); }
 details.more { border-top: 1px solid var(--border); padding-top: 10px; }
 details.more summary { cursor: pointer; font-size: 13px; color: var(--muted); font-weight: 600; padding: 4px 0; }
 details.more[open] { display: flex; flex-direction: column; gap: 14px; }
+
+/* ---- タブ（6つ） ---- */
+.tabbar { gap: 0; padding-left: 4px; padding-right: 4px; }
+.tab { flex: 1 1 0; min-width: 0; font-size: 10px; }
+
+/* ---- TODO ---- */
+.assignee-pick, .filter-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: -6px 0 12px; }
+.assignee-pick .label { margin-right: 2px; }
+.chip-on { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
+.chip .dot { margin-right: 0; }
+.filter { border: 0; background: none; padding: 6px 10px; border-radius: 99px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.filter.on { background: var(--text); color: var(--bg); }
+.todo-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; align-items: flex-start; border: 0; background: none; text-align: left; padding: 10px 12px 10px 0; }
+.who.both { background: var(--surface-2); color: var(--muted); }
+
+/* ---- AIに質問 ---- */
+.head-actions { display: flex; gap: 2px; margin-right: -8px; }
+.ask-btn { color: var(--primary); }
+.push-right { margin-left: auto; }
+.chat { display: flex; flex-direction: column; gap: 10px; padding-bottom: 80px; }
+.ask-intro { display: flex; align-items: center; gap: 12px; color: var(--muted); }
+.ask-intro p { margin: 0; font-size: 14px; }
+.ask-intro .menu-icon { margin: 0; flex-shrink: 0; }
+.suggest { display: flex; flex-wrap: wrap; gap: 8px; }
+.suggest .chip { padding: 8px 12px; font-size: 13px; color: var(--text); }
+.msg { max-width: 88%; padding: 10px 14px; border-radius: 18px; line-height: 1.6; overflow-wrap: anywhere; }
+.msg.user { align-self: flex-end; background: var(--primary); color: var(--primary-ink); border-bottom-right-radius: 6px; white-space: pre-wrap; }
+.msg.model { align-self: flex-start; background: var(--surface); box-shadow: var(--shadow); border-bottom-left-radius: 6px; }
+.msg.error { background: color-mix(in srgb, var(--danger) 12%, var(--surface)); color: var(--danger); }
+.msg ul { margin: 4px 0; padding-left: 1.2em; }
+.typing { display: inline-flex; gap: 4px; padding: 4px 0; }
+.typing i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); animation: blink 1.2s infinite; }
+.typing i:nth-child(2) { animation-delay: .2s; } .typing i:nth-child(3) { animation-delay: .4s; }
+@keyframes blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+.ask-bar {
+  position: fixed; left: 0; right: 0; z-index: 11; bottom: calc(62px + env(safe-area-inset-bottom));
+  display: flex; gap: 8px; align-items: flex-end; max-width: 560px; margin: 0 auto; padding: 8px 16px;
+  background: var(--bg);
+}
+.ask-bar textarea {
+  flex: 1; min-width: 0; resize: none; min-height: 46px; max-height: 120px; padding: 11px 14px; border-radius: 22px;
+  border: 1px solid var(--border); background: var(--surface); font: inherit; font-size: 16px; color: var(--text);
+}
+.ask-bar textarea:focus { outline: 2px solid var(--primary); outline-offset: -1px; }
+.ask-bar .btn { width: 46px; min-height: 46px; padding: 0; border-radius: 50%; }
+.ask-bar .btn:disabled { opacity: .5; }
+.card.setup { display: flex; flex-direction: column; gap: 10px; }
+.card.setup h2 { margin: 0; }
+.card.setup ol { margin: 0; padding-left: 1.3em; font-size: 14px; display: flex; flex-direction: column; gap: 4px; }
+.card.setup a, .card a { color: var(--primary); font-weight: 600; }
+.gemini-form { display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px; }

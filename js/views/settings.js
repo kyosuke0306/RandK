@@ -1,6 +1,9 @@
 import { auth, signOut, ref, setDoc } from '../firebase.js';
 import { icon } from '../icons.js';
 import { esc, toast } from '../util.js';
+import {
+  getApiKey, setApiKey, getModel, setModel, DEFAULT_MODEL,
+} from '../gemini.js';
 
 export function mount(el, { store, navigate }) {
   function render() {
@@ -52,6 +55,22 @@ export function mount(el, { store, navigate }) {
         </ul>
       </section>
 
+      <section class="card">
+        <h2>AIに質問（Gemini）</h2>
+        <form class="gemini-form" id="gemini-form">
+          <label class="field">
+            <span>APIキー（このスマホにだけ保存）</span>
+            <input name="key" type="password" value="${esc(getApiKey())}" placeholder="AIza..." autocomplete="off">
+          </label>
+          <label class="field">
+            <span>モデル</span>
+            <input name="model" value="${esc(getModel())}" placeholder="${DEFAULT_MODEL}" autocomplete="off">
+          </label>
+          <button class="btn btn-primary">保存</button>
+        </form>
+        <p class="label">キーは <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> で作れます。質問するときは、アプリのデータが Google の Gemini に送られます。</p>
+      </section>
+
       <button class="btn btn-ghost full" id="logout">${icon('logout', 18)}<span>ログアウト</span></button>`;
 
     el.querySelector('#name-form').addEventListener('submit', async (e) => {
@@ -75,6 +94,12 @@ export function mount(el, { store, navigate }) {
       }, { merge: true }).catch((err) => toast(`保存に失敗しました (${err.code})`));
     });
 
+    el.querySelector('#gemini-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      setApiKey(e.target.elements.key.value);
+      setModel(e.target.elements.model.value || DEFAULT_MODEL);
+      toast(getApiKey() ? '保存しました' : 'APIキーを削除しました');
+    });
     el.querySelector('#logout').addEventListener('click', () => signOut(auth));
     el.querySelector('[data-back]').addEventListener('click', () => navigate('home'));
   }

@@ -5,6 +5,7 @@ import { icon } from '../icons.js';
 import { esc, yen, monthKey, todayStr, monthLabel, toast } from '../util.js';
 import { cat, summarize, settleResultHtml } from './money.js';
 import { dayLabel, timeLabel, sortEvents } from './calendar.js';
+import { sortTodos } from './todo.js';
 
 const WEEK = ['日', '月', '火', '水', '木', '金', '土'];
 
@@ -18,7 +19,9 @@ function greeting() {
 export function mount(el, { store, views, navigate }) {
   const month = monthKey();
   const today = todayStr();
-  const data = { bills: null, events: null, shopping: null, photos: null };
+  const data = {
+    bills: null, events: null, shopping: null, photos: null, todos: null,
+  };
 
   el.addEventListener('click', (e) => {
     const t = e.target.closest('[data-go]');
@@ -36,10 +39,14 @@ export function mount(el, { store, views, navigate }) {
           <p class="label">${now.getMonth() + 1}月${now.getDate()}日（${WEEK[now.getDay()]}）</p>
           <h1>${greeting()}、${esc(me?.name || '')}</h1>
         </div>
-        <button class="icon-btn" data-go="settings" aria-label="設定">${icon('settings', 22)}</button>
+        <div class="head-actions">
+          <button class="icon-btn ask-btn" data-go="ask" aria-label="FUTARIに質問">${icon('sparkle', 22)}</button>
+          <button class="icon-btn" data-go="settings" aria-label="設定">${icon('settings', 22)}</button>
+        </div>
       </header>
       ${data.bills ? monthCard() + upcomingBills() : '<div class="spinner small"></div>'}
       ${nextEvents()}
+      ${todoList()}
       ${shopping()}
       ${recentPhotos()}
       <h2 class="section-title">メニュー</h2>
@@ -131,6 +138,31 @@ export function mount(el, { store, views, navigate }) {
       </div>`;
   }
 
+  function todoList() {
+    if (!data.todos) return '';
+    const open = sortTodos(data.todos.filter((t) => !t.done)).slice(0, 4);
+    if (!open.length) return '';
+    return `
+      <h2 class="section-title">やること</h2>
+      <div class="card upcoming">
+        ${open.map((t) => {
+          const who = t.assignee ? store.member(t.assignee) : null;
+          const overdue = t.due && t.due < today;
+          return `
+            <button class="upcoming-row" data-go="todo">
+              <span class="muted">${icon('circle', 20)}</span>
+              <span class="bill-main">
+                <span class="bill-name">${esc(t.text)}</span>
+                <span class="bill-meta">
+                  ${who ? `<span class="who tone-${who.tone}">${esc(who.name)}</span>` : '<span class="who both">2人</span>'}
+                  ${t.due ? `<span class="${overdue ? 'overdue' : ''}">${icon('calendar', 13)}${Number(t.due.slice(5, 7))}/${Number(t.due.slice(8, 10))}</span>` : ''}
+                </span>
+              </span>
+            </button>`;
+        }).join('')}
+      </div>`;
+  }
+
   function shopping() {
     if (!data.shopping) return '';
     const todo = data.shopping.filter((i) => !i.done);
@@ -166,6 +198,7 @@ export function mount(el, { store, views, navigate }) {
     onSnapshot(col('months', month, 'bills'), set('bills'), onErr),
     onSnapshot(query(col('events'), where('date', '>=', today), orderBy('date'), limit(3)), set('events'), onErr),
     onSnapshot(col('shopping'), set('shopping'), onErr),
+    onSnapshot(col('todos'), set('todos'), onErr),
     onSnapshot(query(col('photos'), orderBy('createdMs', 'desc'), limit(4)), set('photos'), onErr),
     store.subscribe(render),
   ];
