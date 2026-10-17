@@ -530,3 +530,8 @@ details.more[open] { display: flex; flex-direction: column; gap: 14px; }
 .card.setup ol { margin: 0; padding-left: 1.3em; font-size: 14px; display: flex; flex-direction: column; gap: 4px; }
 .card.setup a, .card a { color: var(--primary); font-weight: 600; }
 .gemini-form { display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px; }
+.field select {
+  width: 100%; min-height: 44px; padding: 8px 12px; border-radius: 10px; font-size: 16px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text);
+}
+.msg.error { white-space: pre-wrap; font-size: 14px; }

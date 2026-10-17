@@ -86,26 +86,79 @@ const SYSTEM = `あなたは同棲カップル2人用の共有アプリ「FUTARI
 - 一般的な相談（節約のコツ、デートの提案など）には普通に答えてよい
 - 箇条書きは「- 」を使う。見出しや表は使わない`;
 
+// 指定したモデルが使えないときに順番に試すモデル
+const FALLBACK_MODELS = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite'];
+
+async function apiError(res) {
+  let message = '';
+  try { message = (await res.json()).error?.message || ''; } catch { /* 本文なし */ }
+  const err = new Error(message || `HTTP ${res.status}`);
+  err.status = res.status;
+  return err;
+}
+
+// このAPIキーで使える、文章を生成できるモデルの一覧
+export async function listModels() {
+  const res = await fetch(`${API}?pageSize=1000`, { headers: { 'x-goog-api-key': getApiKey() } });
+  if (!res.ok) throw await apiError(res);
+  const { models = [] } = await res.json();
+  return models
+    .filter((m) => m.supportedGenerationMethods?.includes('generateContent'))
+    .map((m) => m.name.replace(/^models\//, ''))
+    .filter((name) => /^gemini/.test(name) && !/embed|image|tts|audio|live|vision|robotics|computer/.test(name));
+}
+
+// モデルが存在しない・使えない・そのモデルの無料枠がない、のどれかなら別のモデルを試す
+const canTryOther = (err) => err.status === 404
+  || (err.status === 400 && /model|not (found|supported)/i.test(err.message))
+  || (err.status === 403 && /model/i.test(err.message))
+  || (err.status === 429 && /limit: ?0|free_tier|quota/i.test(err.message));
+
 // 会話（[{ role: 'user'|'model', text }]）を送り、返答を少しずつ onText に渡す
 export async function ask(history, context, onText, signal) {
-  const key = getApiKey();
-  const body = {
+  const body = JSON.stringify({
     systemInstruction: { parts: [{ text: `${SYSTEM}\n\n# アプリのデータ\n${context}` }] },
     contents: history.map((m) => ({ role: m.role, parts: [{ text: m.text }] })),
-  };
-  const res = await fetch(`${API}/${encodeURIComponent(getModel())}:streamGenerateContent?alt=sse`, {
+  });
+  const request = (model) => fetch(`${API}/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-    body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': getApiKey() },
+    body,
     signal,
   });
-  if (!res.ok) {
-    let message = '';
-    try { message = (await res.json()).error?.message || ''; } catch { /* 本文なし */ }
-    const err = new Error(message || `HTTP ${res.status}`);
-    err.status = res.status;
-    throw err;
+
+  const tried = new Set();
+  let candidates = [getModel(), ...FALLBACK_MODELS];
+  let listed = false;
+  let firstError = null;
+  let res = null;
+  while (!res) {
+    const model = candidates.find((m) => !tried.has(m));
+    if (!model) {
+      // 候補が全部だめなら、キーで使えるモデルの一覧から flash 系を探す
+      if (listed) throw firstError;
+      listed = true;
+      try {
+        const available = await listModels();
+        candidates = [...available.filter((m) => /flash/.test(m)), ...available];
+      } catch {
+        throw firstError;
+      }
+      continue;
+    }
+    tried.add(model);
+    const r = await request(model);
+    if (r.ok) {
+      res = r;
+      if (model !== getModel()) setModel(model);
+      break;
+    }
+    const err = await apiError(r);
+    err.model = model;
+    firstError ??= err;
+    if (!canTryOther(err)) throw err;
   }
+
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -134,11 +187,16 @@ export async function ask(history, context, onText, signal) {
 export function errorMessage(err) {
   if (err.name === 'AbortError') return '';
   const msg = err.message || '';
+  const friendly = friendlyMessage(err, msg);
+  return msg && !friendly.includes(msg) ? `${friendly}\n\n詳細: ${msg}` : friendly;
+}
+
+function friendlyMessage(err, msg) {
   if (err.status === 400 && /API key/i.test(msg)) return 'APIキーが正しくありません。設定画面で確認してください。';
   if (err.status === 403) return 'このAPIキーでは使えません。キーの権限を確認してください。';
-  if (err.status === 404) return `モデル「${getModel()}」が見つかりません。設定画面でモデル名を確認してください。`;
-  if (err.status === 429) return '利用回数の上限に達しました。少し時間をおいて試してください。';
+  if (err.status === 404) return `モデル「${err.model || getModel()}」が使えませんでした。設定画面で別のモデルを選んでください。`;
+  if (err.status === 429) return '利用回数の上限に達しました。無料枠は1日の回数に上限があります。時間をおいて試すか、設定画面で別のモデルを選んでください。';
   if (err.status >= 500) return 'Gemini 側で問題が起きています。少し時間をおいて試してください。';
   if (err instanceof TypeError) return '通信できませんでした。電波の状態を確認してください。';
-  return `エラーが発生しました（${msg}）`;
+  return 'エラーが発生しました。';
 }

@@ -2,7 +2,7 @@ import { auth, signOut, ref, setDoc } from '../firebase.js';
 import { icon } from '../icons.js';
 import { esc, toast } from '../util.js';
 import {
-  getApiKey, setApiKey, getModel, setModel, DEFAULT_MODEL,
+  getApiKey, setApiKey, getModel, setModel, listModels, DEFAULT_MODEL,
 } from '../gemini.js';
 
 export function mount(el, { store, navigate }) {
@@ -64,8 +64,9 @@ export function mount(el, { store, navigate }) {
           </label>
           <label class="field">
             <span>モデル</span>
-            <input name="model" value="${esc(getModel())}" placeholder="${DEFAULT_MODEL}" autocomplete="off">
+            <select name="model"><option value="${esc(getModel())}">${esc(getModel())}</option></select>
           </label>
+          <p class="label" data-models-note></p>
           <button class="btn btn-primary">保存</button>
         </form>
         <p class="label">キーは <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> で作れます。質問するときは、アプリのデータが Google の Gemini に送られます。</p>
@@ -94,11 +95,28 @@ export function mount(el, { store, navigate }) {
       }, { merge: true }).catch((err) => toast(`保存に失敗しました (${err.code})`));
     });
 
+    // キーで使えるモデルを読み込んで選択肢にする
+    const $select = el.querySelector('#gemini-form select[name=model]');
+    const $note = el.querySelector('[data-models-note]');
+    if (getApiKey()) {
+      $note.textContent = '使えるモデルを確認しています…';
+      listModels().then((models) => {
+        const current = getModel();
+        const names = [...new Set([current, DEFAULT_MODEL, ...models])];
+        $select.innerHTML = names.map((m) => `<option value="${esc(m)}" ${m === current ? 'selected' : ''}>${esc(m)}${m === DEFAULT_MODEL ? '（おすすめ）' : ''}${models.includes(m) || m === DEFAULT_MODEL ? '' : '（使えません）'}</option>`).join('');
+        $note.textContent = `このキーで使えるモデル: ${models.length}個。うまく動かないときは別のモデルを選んでください。`;
+      }).catch((err) => {
+        $note.textContent = `モデル一覧を読み込めませんでした（${err.message}）。APIキーを確認してください。`;
+      });
+    } else {
+      $note.textContent = 'APIキーを保存すると、使えるモデルを選べるようになります。';
+    }
     el.querySelector('#gemini-form').addEventListener('submit', (e) => {
       e.preventDefault();
       setApiKey(e.target.elements.key.value);
       setModel(e.target.elements.model.value || DEFAULT_MODEL);
       toast(getApiKey() ? '保存しました' : 'APIキーを削除しました');
+      render();
     });
     el.querySelector('#logout').addEventListener('click', () => signOut(auth));
     el.querySelector('[data-back]').addEventListener('click', () => navigate('home'));
