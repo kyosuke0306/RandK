@@ -71,19 +71,64 @@ function renderLoading() {
   root.innerHTML = '<div class="center-screen"><div class="spinner"></div></div>';
 }
 
+// LINE・Instagram などのアプリ内ブラウザでは Google ログインが使えない
+const inAppBrowser = (() => {
+  const ua = navigator.userAgent;
+  if (/\bLine\//i.test(ua)) return 'LINE';
+  if (/Instagram/i.test(ua)) return 'Instagram';
+  if (/FBAN|FBAV|FB_IAB/i.test(ua)) return 'Facebook';
+  if (/Twitter/i.test(ua)) return 'X';
+  if (/KAKAOTALK/i.test(ua)) return 'KakaoTalk';
+  if (/; wv\)/.test(ua)) return 'アプリ';
+  return null;
+})();
+
+// LINE は URL に openExternalBrowser=1 を付けると Safari / Chrome で開き直してくれる
+if (inAppBrowser === 'LINE' && !location.search.includes('openExternalBrowser')) {
+  location.replace(`${location.pathname}?openExternalBrowser=1${location.hash}`);
+}
+
+function renderInAppWarning() {
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const browser = isIOS ? 'Safari' : 'Chrome';
+  const url = `${location.origin}${location.pathname}`;
+  return `
+    <div class="card inapp">
+      <p><strong>${inAppBrowser}の中のブラウザではログインできません</strong></p>
+      <p class="muted">右上か右下のメニュー（${icon('more', 16, 'inline')}）から「${browser}で開く」「ブラウザで開く」を選ぶか、下のボタンでリンクをコピーして ${browser} に貼り付けてください。</p>
+      <button class="btn" id="copy-url">${icon('copy', 18)}<span>リンクをコピー</span></button>
+      <p class="label url">${esc(url)}</p>
+    </div>`;
+}
+
 function renderLogin() {
   root.innerHTML = `
     <div class="center-screen">
       <div class="logo-mark">${icon('heart', 32)}</div>
       <h1>ふたりの家計</h1>
       <p class="muted">家賃や光熱費の支払いを2人で共有</p>
+      ${inAppBrowser ? renderInAppWarning() : ''}
       <button class="btn btn-google" id="login">${googleLogo}<span>Googleでログイン</span></button>
     </div>`;
+  root.querySelector('#copy-url')?.addEventListener('click', async () => {
+    const url = `${location.origin}${location.pathname}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast('リンクをコピーしました');
+    } catch {
+      prompt('このリンクをコピーしてください', url);
+    }
+  });
   root.querySelector('#login').addEventListener('click', async () => {
     try {
       await signInWithGoogle();
     } catch (e) {
-      if (e.code !== 'auth/popup-closed-by-user') toast(`ログインに失敗しました (${e.code})`);
+      if (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request') return;
+      if (e.code === 'auth/popup-blocked') {
+        toast('ポップアップがブロックされました。ブラウザの設定で許可してください');
+        return;
+      }
+      toast(`ログインに失敗しました (${e.code})`);
     }
   });
 }
