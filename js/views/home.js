@@ -1,38 +1,34 @@
-import { col, ref, onSnapshot } from '../firebase.js';
+import {
+  col, onSnapshot, query, where, orderBy, limit,
+} from '../firebase.js';
 import { icon } from '../icons.js';
 import { esc, yen, monthKey, todayStr, monthLabel, toast } from '../util.js';
-import { CATEGORIES, summarize, settleResultHtml } from './money.js';
+import { cat, summarize, settleResultHtml } from './money.js';
+import { dayLabel, timeLabel, sortEvents } from './calendar.js';
 
 const WEEK = ['日', '月', '火', '水', '木', '金', '土'];
-const cat = (id) => CATEGORIES.find((c) => c.id === id) || CATEGORIES.at(-1);
 
 function greeting() {
-  const h = new Date().getHours();
-  if (h < 4 || h >= 18) return 'こんばんは';
-  if (h < 11) return 'おはよう';
+  const hour = new Date().getHours();
+  if (hour < 4 || hour >= 18) return 'こんばんは';
+  if (hour < 11) return 'おはよう';
   return 'こんにちは';
 }
 
 export function mount(el, { store, views, navigate }) {
   const month = monthKey();
-  let bills = null;
-  let monthMeta = {};
-
-  const openMoney = () => {
-    sessionStorage.setItem('month', month);
-    navigate('money');
-  };
+  const today = todayStr();
+  const data = { bills: null, events: null, shopping: null, photos: null };
 
   el.addEventListener('click', (e) => {
     const t = e.target.closest('[data-go]');
     if (!t) return;
-    if (t.dataset.go === 'money') openMoney();
-    else navigate(t.dataset.go);
+    if (t.dataset.go === 'money') sessionStorage.setItem('month', month);
+    navigate(t.dataset.go);
   });
 
   function render() {
     const me = store.member(store.user.uid);
-    const members = store.memberList();
     const now = new Date();
     el.innerHTML = `
       <header class="home-head">
@@ -40,13 +36,12 @@ export function mount(el, { store, views, navigate }) {
           <p class="label">${now.getMonth() + 1}月${now.getDate()}日（${WEEK[now.getDay()]}）</p>
           <h1>${greeting()}、${esc(me?.name || '')}</h1>
         </div>
-        <div class="avatars">
-          ${members.map((m) => (m.photoURL
-            ? `<img src="${esc(m.photoURL)}" alt="${esc(m.name)}" referrerpolicy="no-referrer">`
-            : `<span class="avatar tone-${m.tone}">${icon('users', 16)}</span>`)).join('')}
-        </div>
+        <button class="icon-btn" data-go="settings" aria-label="設定">${icon('settings', 22)}</button>
       </header>
-      ${bills ? monthCard() + upcoming() : '<div class="spinner small"></div>'}
+      ${data.bills ? monthCard() + upcomingBills() : '<div class="spinner small"></div>'}
+      ${nextEvents()}
+      ${shopping()}
+      ${recentPhotos()}
       <h2 class="section-title">メニュー</h2>
       <div class="menu-grid">
         ${views.filter((v) => v.id !== 'home').map((v) => `
@@ -59,24 +54,23 @@ export function mount(el, { store, views, navigate }) {
   }
 
   function monthCard() {
+    const { bills } = data;
     const s = summarize(bills, store);
     let settle = '';
     if (!bills.length) {
-      settle = '<p class="settle-note">まだ項目がありません。タップして追加しましょう。</p>';
-    } else if (monthMeta.settled) {
-      settle = `<p class="home-status ok">${icon('checkCircle', 18)}精算済み</p>`;
+      settle = '<p class="settle-note">タップして今月の家計簿を開きましょう。</p>';
+    } else if (s.allSettled) {
+      settle = `<p class="home-status ok">${icon('checkCircle', 18)}すべて精算済み</p>`;
+    } else if (s.rows && s.pending.length && s.amount > 0) {
+      settle = settleResultHtml(s.debtor, s.creditor, s.amount);
     } else if (s.unpaid > 0) {
       settle = `<p class="home-status">${icon('circle', 18)}未払いが${s.unpaid}件あります</p>`;
-    } else if (s.rows && s.amount > 0) {
-      settle = settleResultHtml(s.debtor, s.creditor, s.amount);
-    } else {
-      settle = `<p class="home-status ok">${icon('checkCircle', 18)}すべて支払済み</p>`;
     }
     return `
       <button class="card total home-month" data-go="money">
         <div class="total-row">
           <div>
-            <p class="label">${monthLabel(month)}の合計</p>
+            <p class="label">${monthLabel(month)}の家計簿</p>
             <p class="big">${yen(s.total)}</p>
           </div>
           <span class="muted">${icon('chevronRight', 22)}</span>
@@ -87,12 +81,11 @@ export function mount(el, { store, views, navigate }) {
       </button>`;
   }
 
-  function upcoming() {
-    const list = bills.filter((b) => !b.paid)
+  function upcomingBills() {
+    const list = data.bills.filter((b) => !b.paid)
       .sort((a, b) => (a.dueDate || '9999').localeCompare(b.dueDate || '9999'))
       .slice(0, 4);
     if (!list.length) return '';
-    const today = todayStr();
     return `
       <h2 class="section-title">これからの支払い</h2>
       <div class="card upcoming">
@@ -119,15 +112,61 @@ export function mount(el, { store, views, navigate }) {
       </div>`;
   }
 
+  function nextEvents() {
+    if (!data.events?.length) return '';
+    return `
+      <h2 class="section-title">これからの予定</h2>
+      <div class="card upcoming">
+        ${data.events.map((ev) => `
+          <button class="upcoming-row" data-go="calendar">
+            <span class="date-badge ${ev.date === today ? 'today' : ''}">
+              <small>${Number(ev.date.slice(5, 7))}月</small>${Number(ev.date.slice(8, 10))}
+            </span>
+            <span class="bill-main">
+              <span class="bill-name">${esc(ev.title)}</span>
+              <span class="bill-meta"><span>${ev.date === today ? '今日 ' : dayLabel(ev.date).replace(/^\d+月\d+日/, '')}${timeLabel(ev)}</span>
+              ${ev.place ? `<span>${icon('mapPin', 13)}${esc(ev.place)}</span>` : ''}</span>
+            </span>
+          </button>`).join('')}
+      </div>`;
+  }
+
+  function shopping() {
+    if (!data.shopping) return '';
+    const todo = data.shopping.filter((i) => !i.done);
+    if (!todo.length) return '';
+    return `
+      <h2 class="section-title">買い物リスト</h2>
+      <button class="card shop-summary" data-go="shopping">
+        <span class="menu-icon">${icon('cart', 22)}</span>
+        <span class="bill-main">
+          <span class="bill-name">${todo.length}件</span>
+          <span class="bill-note">${todo.slice(0, 5).map((i) => esc(i.text)).join('、')}</span>
+        </span>
+        <span class="muted">${icon('chevronRight', 20)}</span>
+      </button>`;
+  }
+
+  function recentPhotos() {
+    if (!data.photos?.length) return '';
+    return `
+      <h2 class="section-title">最近の写真</h2>
+      <button class="photo-strip" data-go="photos">
+        ${data.photos.map((p) => `<img src="${p.thumb}" alt="">`).join('')}
+      </button>`;
+  }
+
+  const set = (key) => (snap) => {
+    data[key] = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    if (key === 'events') sortEvents(data.events);
+    render();
+  };
+  const onErr = (err) => toast(`読み込みに失敗しました (${err.code})`);
   const unsubs = [
-    onSnapshot(col('months', month, 'bills'), (snap) => {
-      bills = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      render();
-    }, (e) => toast(`読み込みに失敗しました (${e.code})`)),
-    onSnapshot(ref('months', month), (snap) => {
-      monthMeta = snap.data() || {};
-      if (bills) render();
-    }),
+    onSnapshot(col('months', month, 'bills'), set('bills'), onErr),
+    onSnapshot(query(col('events'), where('date', '>=', today), orderBy('date'), limit(3)), set('events'), onErr),
+    onSnapshot(col('shopping'), set('shopping'), onErr),
+    onSnapshot(query(col('photos'), orderBy('createdMs', 'desc'), limit(4)), set('photos'), onErr),
     store.subscribe(render),
   ];
   render();

@@ -2,7 +2,7 @@ import { auth, signOut, ref, setDoc } from '../firebase.js';
 import { icon } from '../icons.js';
 import { esc, toast } from '../util.js';
 
-export function mount(el, { store }) {
+export function mount(el, { store, navigate }) {
   function render() {
     const me = store.member(store.user.uid);
     const members = store.memberList();
@@ -13,7 +13,10 @@ export function mount(el, { store }) {
     else if (partner && shares[partner.uid] != null) myShare = 100 - shares[partner.uid];
 
     el.innerHTML = `
-      <header class="page-head"><h1>設定</h1></header>
+      <header class="page-head row">
+        <button class="icon-btn back" data-back aria-label="トップに戻る">${icon('chevronLeft')}</button>
+        <h1>設定</h1>
+      </header>
 
       <section class="card">
         <h2>自分の表示名</h2>
@@ -73,6 +76,7 @@ export function mount(el, { store }) {
     });
 
     el.querySelector('#logout').addEventListener('click', () => signOut(auth));
+    el.querySelector('[data-back]').addEventListener('click', () => navigate('home'));
   }
 
   render();

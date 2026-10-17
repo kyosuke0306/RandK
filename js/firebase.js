@@ -4,8 +4,8 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-  collection, doc, onSnapshot, setDoc, addDoc, updateDoc, deleteDoc, getDocs,
-  writeBatch, serverTimestamp, query, orderBy,
+  collection, doc, onSnapshot, setDoc, addDoc, updateDoc, deleteDoc, getDoc, getDocs,
+  writeBatch, runTransaction, serverTimestamp, query, where, orderBy, limit,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig, dataRoot } from './firebase-config.js';
 
@@ -31,6 +31,6 @@ export function signInWithGoogle() {
 
 export {
   signOut, onAuthStateChanged,
-  collection, doc, onSnapshot, setDoc, addDoc, updateDoc, deleteDoc, getDocs,
-  writeBatch, serverTimestamp, query, orderBy,
+  collection, doc, onSnapshot, setDoc, addDoc, updateDoc, deleteDoc, getDoc, getDocs,
+  writeBatch, runTransaction, serverTimestamp, query, where, orderBy, limit,
 };

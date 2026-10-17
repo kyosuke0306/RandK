@@ -6,13 +6,20 @@ import { icon, googleLogo } from './icons.js';
 import { esc, toast } from './util.js';
 import * as homeView from './views/home.js';
 import * as moneyView from './views/money.js';
+import * as shoppingView from './views/shopping.js';
+import * as photosView from './views/photos.js';
+import * as calendarView from './views/calendar.js';
 import * as settingsView from './views/settings.js';
 
 // 画面（タブ）の一覧。機能を増やすときはここに追加する。
 const VIEWS = [
   { id: 'home', label: 'ホーム', icon: 'home', view: homeView },
-  { id: 'money', label: 'お金', icon: 'wallet', desc: '家賃・光熱費の支払いと精算', view: moneyView },
-  { id: 'settings', label: '設定', icon: 'settings', desc: '表示名・負担の割合', view: settingsView },
+  { id: 'money', label: '家計簿', icon: 'wallet', desc: '家賃・光熱費の支払いと精算', view: moneyView },
+  { id: 'shopping', label: '買い物', icon: 'cart', desc: '買いたいものをメモ', view: shoppingView },
+  { id: 'photos', label: '写真', icon: 'camera', desc: '撮った写真を2人で見る', view: photosView },
+  { id: 'calendar', label: '予定', icon: 'calendar', desc: '2人で遊ぶ予定', view: calendarView },
+  // tab: false は下のタブに出さない（トップ画面から開く）
+  { id: 'settings', label: '設定', icon: 'settings', desc: '表示名・負担の割合', view: settingsView, tab: false },
 ];
 
 const root = document.getElementById('app');
@@ -148,7 +155,7 @@ function renderShell() {
   root.innerHTML = `
     <main id="view" class="view"></main>
     <nav class="tabbar">
-      ${VIEWS.map((v) => `
+      ${VIEWS.filter((v) => v.tab !== false).map((v) => `
         <button class="tab" data-view="${v.id}">
           ${icon(v.icon, 22)}<span>${v.label}</span>
         </button>`).join('')}
