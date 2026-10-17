@@ -17,6 +17,50 @@ export const CATEGORIES = [
 const cat = (id) => CATEGORIES.find((c) => c.id === id) || CATEGORIES.at(-1);
 const PRESETS = ['rent', 'electricity', 'gas', 'water', 'internet'];
 
+export function shareFor(store, uid) {
+  const members = store.memberList();
+  const shares = store.settings.shares || {};
+  if (members.length < 2) return 100;
+  const other = members.find((m) => m.uid !== uid);
+  if (shares[uid] != null) return shares[uid];
+  if (other && shares[other.uid] != null) return 100 - shares[other.uid];
+  return 50;
+}
+
+// 合計・支払状況・精算額をまとめて計算する（トップ画面でも使う）
+export function summarize(bills, store) {
+  const sum = (list) => list.reduce((s, b) => s + (Number(b.amount) || 0), 0);
+  const total = sum(bills);
+  const paidBills = bills.filter((b) => b.paid);
+  const paidTotal = sum(paidBills);
+  const pct = total ? Math.round((paidTotal / total) * 100) : 0;
+  const unpaid = bills.length - paidBills.length;
+  const members = store.memberList();
+  const result = { total, paidBills, paidTotal, pct, unpaid, members };
+  if (members.length !== 2 || !bills.length) return result;
+
+  const rows = members.map((m) => {
+    const paid = sum(paidBills.filter((b) => b.payer === m.uid));
+    const burden = Math.round(total * shareFor(store, m.uid) / 100);
+    return { ...m, paid, burden, diff: paid - burden };
+  });
+  const [x, y] = rows;
+  const creditor = x.diff >= y.diff ? x : y;
+  const debtor = creditor === x ? y : x;
+  const amount = Math.round((creditor.diff - debtor.diff) / 2);
+  return { ...result, rows, creditor, debtor, amount };
+}
+
+export function settleResultHtml(debtor, creditor, amount) {
+  return `
+    <div class="settle-result">
+      <span class="who tone-${debtor.tone}">${esc(debtor.name)}</span>
+      ${icon('arrowRight', 18, 'muted')}
+      <span class="who tone-${creditor.tone}">${esc(creditor.name)}</span>
+      <strong>${yen(amount)}</strong>
+    </div>`;
+}
+
 export function mount(el, { store, db }) {
   let month = sessionStorage.getItem('month') || monthKey();
   let bills = [];
@@ -86,16 +130,6 @@ export function mount(el, { store, db }) {
     ];
   }
 
-  function shareOf(uid) {
-    const members = store.memberList();
-    const shares = store.settings.shares || {};
-    if (members.length < 2) return 100;
-    const other = members.find((m) => m.uid !== uid);
-    if (shares[uid] != null) return shares[uid];
-    if (other && shares[other.uid] != null) return 100 - shares[other.uid];
-    return 50;
-  }
-
   function render() {
     if (!gotBills) return;
     renderSummary();
@@ -103,38 +137,20 @@ export function mount(el, { store, db }) {
   }
 
   function renderSummary() {
-    const total = bills.reduce((s, b) => s + (Number(b.amount) || 0), 0);
-    const paidBills = bills.filter((b) => b.paid);
-    const paidTotal = paidBills.reduce((s, b) => s + (Number(b.amount) || 0), 0);
-    const pct = total ? Math.round((paidTotal / total) * 100) : 0;
-    const members = store.memberList();
+    const {
+      total, paidBills, paidTotal, pct, members, rows, unpaid, debtor, creditor, amount,
+    } = summarize(bills, store);
+    const shareOf = (uid) => shareFor(store, uid);
 
     let settleHtml = '';
-    if (members.length === 2 && bills.length) {
-      const rows = members.map((m) => {
-        const paid = paidBills.filter((b) => b.payer === m.uid)
-          .reduce((s, b) => s + (Number(b.amount) || 0), 0);
-        const burden = Math.round(total * shareOf(m.uid) / 100);
-        return { ...m, paid, burden, diff: paid - burden };
-      });
-      const unpaid = bills.filter((b) => !b.paid).length;
-      const [x, y] = rows;
-      const creditor = x.diff >= y.diff ? x : y;
-      const debtor = creditor === x ? y : x;
-      const amount = Math.round((creditor.diff - debtor.diff) / 2);
+    if (rows) {
       let result;
       if (unpaid > 0) {
         result = `<p class="settle-note">未払いが${unpaid}件あります。すべて支払うと精算額が確定します。</p>`;
       } else if (amount === 0) {
         result = '<p class="settle-result">精算の必要はありません</p>';
       } else {
-        result = `
-          <div class="settle-result">
-            <span class="who tone-${debtor.tone}">${esc(debtor.name)}</span>
-            ${icon('arrowRight', 18, 'muted')}
-            <span class="who tone-${creditor.tone}">${esc(creditor.name)}</span>
-            <strong>${yen(amount)}</strong>
-          </div>`;
+        result = settleResultHtml(debtor, creditor, amount);
       }
       settleHtml = `
         <div class="card settle ${monthMeta.settled ? 'is-settled' : ''}">

@@ -84,6 +84,7 @@ js/firebase.js          Firebase SDK の読み込み
 js/firebase-config.js   Firebase の設定値
 js/icons.js             SVG アイコン
 js/util.js
+js/views/home.js        トップ画面（今月の状況・これからの支払い・メニュー）
 js/views/money.js       お金（支払い一覧・精算）
 js/views/settings.js    設定
 firestore.rules         セキュリティルール
@@ -91,5 +92,5 @@ firestore.rules         セキュリティルール
 
 ## 機能を追加するには
 
-`js/views/` に `mount(el, { store, db })` を持つファイルを作り、`js/app.js` の `VIEWS` に1行追加すると下のタブに並びます。
+`js/views/` に `mount(el, { store, db, navigate })` を持つファイルを作り、`js/app.js` の `VIEWS` に1行追加すると、下のタブとトップ画面のメニューに並びます。
 データは `col('memos')` のように `js/firebase.js` の `col` / `ref` で保存すれば `apps/randk/` の下に入り、`firestore.rules` はそのまま2人だけに制限されます。

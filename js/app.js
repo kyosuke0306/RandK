@@ -4,13 +4,15 @@ import {
 } from './firebase.js';
 import { icon, googleLogo } from './icons.js';
 import { esc, toast } from './util.js';
+import * as homeView from './views/home.js';
 import * as moneyView from './views/money.js';
 import * as settingsView from './views/settings.js';
 
 // 画面（タブ）の一覧。機能を増やすときはここに追加する。
 const VIEWS = [
-  { id: 'money', label: 'お金', icon: 'wallet', view: moneyView },
-  { id: 'settings', label: '設定', icon: 'settings', view: settingsView },
+  { id: 'home', label: 'ホーム', icon: 'home', view: homeView },
+  { id: 'money', label: 'お金', icon: 'wallet', desc: '家賃・光熱費の支払いと精算', view: moneyView },
+  { id: 'settings', label: '設定', icon: 'settings', desc: '表示名・負担の割合', view: settingsView },
 ];
 
 const root = document.getElementById('app');
@@ -44,7 +46,7 @@ export const store = {
 
 let unsubs = [];
 let unmountView = null;
-let currentView = location.hash.slice(1) || 'money';
+const viewFromHash = () => location.hash.slice(1) || 'home';
 
 function cleanup() {
   unsubs.forEach((u) => u());
@@ -107,23 +109,34 @@ function renderShell() {
         </button>`).join('')}
     </nav>`;
   root.querySelectorAll('.tab').forEach((b) => {
-    b.addEventListener('click', () => showView(b.dataset.view));
+    b.addEventListener('click', () => navigate(b.dataset.view));
   });
-  showView(currentView);
+  showView(viewFromHash());
 }
+
+// 画面を移動する。履歴に残るので、スマホの「戻る」で前の画面に戻れる。
+function navigate(id) {
+  if (viewFromHash() === id) showView(id);
+  else location.hash = id;
+}
+
+window.addEventListener('hashchange', () => {
+  if (root.querySelector('#view')) showView(viewFromHash());
+});
 
 function showView(id) {
   const entry = VIEWS.find((v) => v.id === id) || VIEWS[0];
-  currentView = entry.id;
-  history.replaceState(null, '', `#${entry.id}`);
   root.querySelectorAll('.tab').forEach((b) => {
     b.classList.toggle('active', b.dataset.view === entry.id);
   });
   unmountView?.();
-  const container = root.querySelector('#view');
-  container.innerHTML = '';
+  // 前の画面のイベントが残らないよう、毎回新しい要素に差し替える
+  const container = document.createElement('main');
+  container.id = 'view';
+  container.className = 'view';
+  root.querySelector('#view').replaceWith(container);
   window.scrollTo(0, 0);
-  unmountView = entry.view.mount(container, { store, db });
+  unmountView = entry.view.mount(container, { store, db, views: VIEWS, navigate });
 }
 
 async function start(user) {
