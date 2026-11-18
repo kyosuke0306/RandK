@@ -1,6 +1,6 @@
 import { col, getDocs, query, orderBy, limit } from './firebase.js';
 import { monthKey, shiftMonth, todayStr, yen } from './util.js';
-import { cat, summarize, shareFor } from './views/money.js';
+import { cat, summarize, shareFor, isFixedAmount, payDayLabel } from './views/money.js';
 
 // Gemini の APIキーは、この端末のブラウザにだけ保存する（Firestore やリポジトリには置かない）
 const KEY_STORAGE = 'futari.geminiKey';
@@ -48,7 +48,7 @@ export async function buildContext(store) {
     bills.forEach((b) => {
       const status = b.settled ? '精算済み' : b.paid ? '支払済み・未精算' : '未払い';
       lines.push(`- ${b.name || cat(b.category).label}: ${b.amount != null ? yen(b.amount) : '金額未入力'}、${status}、払う人: ${name(b.payer)}`
-        + `${b.dueDate ? `、期限 ${b.dueDate}` : ''}${b.receiptCount ? `、領収書${b.receiptCount}枚` : ''}${b.note ? `、メモ: ${b.note}` : ''}`);
+        + `${b.dueDate ? `、期限 ${b.dueDate}` : ''}${b.payDay ? `、支払日 ${payDayLabel(b.payDay)}` : ''}${b.method ? `、支払い方法 ${b.method}` : ''}${isFixedAmount(b) ? '、金額は毎月固定' : ''}${b.receiptCount ? `、領収書${b.receiptCount}枚` : ''}${b.note ? `、メモ: ${b.note}` : ''}`);
     });
     if (s.rows) {
       lines.push(`  負担額（割合で割った額）: ${s.rows.map((r) => `${r.name} ${yen(r.burden)}（支払った額 ${yen(r.paid)}）`).join('、')}`);

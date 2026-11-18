@@ -58,7 +58,7 @@ export const dateLabel = (ms) => {
 
 // 全画面で画像を表示する。fullRef があれば大きい画像を読み込んで差し替える。
 export function openImageViewer({
-  thumb, fullRef, title = '', subtitle = '', fileName = 'photo.jpg', caption, onDelete, deleteMessage,
+  thumb, fullRef, title = '', subtitle = '', fileName = 'photo.jpg', caption, onDelete, deleteMessage, scroll = false,
 }) {
   const dlg = h(`
     <dialog class="viewer">
@@ -68,7 +68,7 @@ export function openImageViewer({
         <button class="icon-btn" data-share aria-label="保存・共有">${icon('share')}</button>
         ${onDelete ? `<button class="icon-btn" data-delete aria-label="削除">${icon('trash')}</button>` : ''}
       </header>
-      <div class="viewer-body"><img src="${thumb}" alt=""></div>
+      <div class="viewer-body ${scroll ? 'scroll' : ''}"><img src="${thumb}" alt=""></div>
       ${caption ? `
         <footer class="viewer-foot">
           <input data-caption value="${esc(caption.value || '')}" placeholder="ひとことを追加" maxlength="100">
@@ -101,7 +101,7 @@ export function openImageViewer({
 
   dlg.querySelector('[data-share]').addEventListener('click', async () => {
     const blob = await (await fetch(full || thumb)).blob();
-    const file = new File([blob], fileName, { type: 'image/jpeg' });
+    const file = new File([blob], fileName, { type: blob.type || 'image/jpeg' });
     if (navigator.canShare?.({ files: [file] })) {
       navigator.share({ files: [file] }).catch(() => {});
     } else {

@@ -110,6 +110,7 @@ export function mount(el, { store, views, navigate }) {
                 <span class="bill-name">${esc(b.name || c.label)}</span>
                 <span class="bill-meta">
                   <span class="${overdue ? 'overdue' : ''}">${icon('calendar', 13)}${due}</span>
+                  ${b.method ? `<span>${esc(b.method)}</span>` : ''}
                   ${payer ? `<span class="who tone-${payer.tone}">${esc(payer.name)}</span>` : ''}
                 </span>
               </span>

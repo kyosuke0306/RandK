@@ -34,6 +34,8 @@ const paths = {
   send: '<path d="M4 12 20 4l-4 16-4-7-8-1z"/><path d="m12 13 8-9"/>',
   listCheck: '<path d="m3.5 6 1.8 1.8L8.5 4.5"/><path d="m3.5 13 1.8 1.8 3.2-3.3"/><path d="M12 6.5h9M12 13.5h9M4 20h17"/>',
   more: '<circle cx="12" cy="5" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="19" r="1.3" fill="currentColor"/>',
+  card: '<rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19M6 15h4"/>',
+  download: '<path d="M12 3v12"/><path d="m7.5 10.5 4.5 4.5 4.5-4.5"/><path d="M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2"/>',
   heart: '<path d="M12 20.5s-8-4.8-8-11A4.5 4.5 0 0 1 12 6.8a4.5 4.5 0 0 1 8 2.7c0 6.2-8 11-8 11z"/>',
 };
 

@@ -1,10 +1,11 @@
 import {
-  db, col, ref, doc, onSnapshot, updateDoc, setDoc, getDocs,
+  db, col, ref, doc, onSnapshot, updateDoc, setDoc, getDoc, getDocs,
   writeBatch, runTransaction, serverTimestamp, query, where, increment,
 } from '../firebase.js';
 import { icon } from '../icons.js';
 import { esc, yen, monthKey, todayStr, shiftMonth, monthLabel, toast, h } from '../util.js';
 import { processImage, openImageViewer, dateLabel } from '../image.js';
+import { renderBillsImage } from '../billImage.js';
 
 export const CATEGORIES = [
   { id: 'rent', label: '家賃', icon: 'home' },
@@ -17,8 +18,25 @@ export const CATEGORIES = [
 ];
 // 毎月かならず用意する項目
 const FIXED = ['rent', 'electricity', 'gas', 'water'];
-// 先月から金額を引き継ぐ項目（毎月同じ金額のもの）
+// 金額固定の設定がまだない項目で、先月から金額を引き継ぐもの（以前からの動き）
 const CARRY_AMOUNT = ['rent', 'internet'];
+
+// 支払い方法（プルダウン）
+export const METHODS = ['口座振替', '振込用紙', 'クレジットカード', '銀行振込', 'スマホ決済', '現金', 'その他'];
+
+// 金額を毎月固定にしているか（未設定の古いデータは家賃・ネットを固定とみなす）
+export const isFixedAmount = (b) => b.fixedAmount ?? CARRY_AMOUNT.includes(b.category);
+
+// 毎月の支払日（payDay: 1〜31 か 'end' = 月末）から、その月の日付を作る
+export function dueDateFor(month, payDay) {
+  if (!payDay) return null;
+  const [y, m] = month.split('-').map(Number);
+  const lastDay = new Date(y, m, 0).getDate();
+  const day = payDay === 'end' ? lastDay : Math.min(Number(payDay), lastDay);
+  return `${month}-${String(day).padStart(2, '0')}`;
+}
+
+export const payDayLabel = (payDay) => (payDay === 'end' ? '毎月末' : payDay ? `毎月${payDay}日` : '');
 
 export const cat = (id) => CATEGORIES.find((c) => c.id === id) || CATEGORIES.at(-1);
 const catIndex = (id) => CATEGORIES.indexOf(cat(id));
@@ -99,19 +117,24 @@ async function setupMonth(month, store) {
     const b = d.data();
     const id = FIXED.includes(b.category) && !items[b.category] ? b.category : d.id;
     const day = b.dueDate ? Math.min(Number(b.dueDate.slice(8, 10)), lastDay) : null;
+    const fixed = isFixedAmount(b);
     items[id] = {
       category: b.category,
       name: b.name || cat(b.category).label,
-      amount: CARRY_AMOUNT.includes(b.category) ? b.amount ?? null : null,
+      amount: fixed ? b.amount ?? null : null,
+      fixedAmount: fixed,
+      method: b.method || null,
+      payDay: b.payDay || null,
       payer: b.payer || null,
-      dueDate: day ? `${month}-${String(day).padStart(2, '0')}` : null,
+      dueDate: b.payDay ? dueDateFor(month, b.payDay) : day ? `${month}-${String(day).padStart(2, '0')}` : null,
       note: '',
       order: b.order ?? catIndex(b.category),
     };
   });
   FIXED.forEach((c) => {
     items[c] ??= {
-      category: c, name: cat(c).label, amount: null, payer: null, dueDate: null, note: '', order: catIndex(c),
+      category: c, name: cat(c).label, amount: null, fixedAmount: CARRY_AMOUNT.includes(c), method: null, payDay: null,
+      payer: null, dueDate: null, note: '', order: catIndex(c),
     };
   });
 
@@ -191,6 +214,30 @@ async function deleteReceipt(r) {
   await batch.commit();
 }
 
+// 支払い方法・支払日・固定金額を変えたら、すでに作られている先の月（未払いのもの）にも反映する
+async function applyToLaterMonths(month, billId, bill, store) {
+  const later = (await getDocs(col('months'))).docs.map((d) => d.id).filter((m) => m > month);
+  if (!later.length) return;
+  const batch = writeBatch(db);
+  let count = 0;
+  for (const m of later) {
+    const snaps = await Promise.all([...new Set([billId, FIXED.includes(bill.category) ? bill.category : billId])]
+      .map((id) => getDoc(ref('months', m, 'bills', id))));
+    const snap = snaps.find((x) => x.exists() && x.data().category === bill.category);
+    if (!snap || snap.data().paid) continue;
+    batch.update(snap.ref, {
+      method: bill.method,
+      payDay: bill.payDay,
+      fixedAmount: bill.fixedAmount,
+      ...(bill.payDay ? { dueDate: dueDateFor(m, bill.payDay) } : {}),
+      ...(bill.fixedAmount ? { amount: bill.amount } : {}),
+      updatedAt: serverTimestamp(), updatedBy: store.user.uid,
+    });
+    count += 1;
+  }
+  if (count) await batch.commit();
+}
+
 export function mount(el, { store }) {
   let month = sessionStorage.getItem('month') || monthKey();
   let bills = [];
@@ -224,6 +271,7 @@ export function mount(el, { store }) {
     if (act === 'toggle') togglePaid(bill);
     if (act === 'setup') setupMonth(month, store).catch((err) => toast(`作成に失敗しました (${err.code})`));
     if (act === 'settle-all') settleAll();
+    if (act === 'image') saveImage();
   });
 
   const billsRef = () => col('months', month, 'bills');
@@ -379,6 +427,7 @@ export function mount(el, { store }) {
       const meta = [
         statusChip(b),
         b.dueDate && `<span class="${overdue ? 'overdue' : ''}">${icon('calendar', 13)}${shortDate(b.dueDate)}${overdue ? ' 期限切れ' : ''}</span>`,
+        b.method && `<span>${icon('card', 13)}${esc(b.method)}</span>`,
         b.receiptCount > 0 && `<span>${icon('receipt', 13)}${b.receiptCount}</span>`,
       ].filter(Boolean).join('');
       const split = splitText(b.amount);
@@ -396,11 +445,14 @@ export function mount(el, { store }) {
             </span>
             <span class="bill-amount">
               ${b.amount ? yen(b.amount) : '<span class="muted">金額を入力</span>'}
+              ${isFixedAmount(b) && b.amount ? '<small class="fixed-tag">毎月固定</small>' : ''}
               ${split ? `<small>${split}</small>` : ''}
             </span>
           </button>
         </article>`;
-    }).join('') + `<p class="updated muted">${lastUpdated()}</p>`;
+    }).join('') + `
+      <button class="btn image-btn" data-act="image">${icon('download', 18)}<span>この月の一覧を画像で保存・送る</span></button>
+      <p class="updated muted">${lastUpdated()}</p>`;
   }
 
   function lastUpdated() {
@@ -412,6 +464,24 @@ export function mount(el, { store }) {
   }
 
   const stamp = () => ({ updatedAt: serverTimestamp(), updatedBy: store.user.uid });
+
+  // その月の支払い一覧を、人に送れる画像にする
+  async function saveImage() {
+    if (!bills.length) return;
+    try {
+      const data = await renderBillsImage({ month, bills, store });
+      openImageViewer({
+        thumb: data,
+        title: `${monthLabel(month)}の支払い`,
+        subtitle: '右上のボタンから保存・送信できます',
+        fileName: `futari-${month}.png`,
+        scroll: true,
+      });
+    } catch (err) {
+      console.error(err);
+      toast('画像を作れませんでした');
+    }
+  }
 
   async function togglePaid(b) {
     if (!b) return;
@@ -447,6 +517,8 @@ export function mount(el, { store }) {
     const editMonth = month;
     const members = store.memberList();
     let amount = b.amount ?? null;
+    const curPayDay = b.payDay || (b.dueDate ? Number(b.dueDate.slice(8, 10)) : '');
+    const fixedNow = isNew ? false : isFixedAmount(b);
     let receipts = [];
     const pending = []; // 保存時にアップロードする領収書 { file, url }
 
@@ -462,6 +534,29 @@ export function mount(el, { store }) {
             <span class="amount-value"></span>
             <span class="split-preview"></span>
           </button>
+          <label class="switch-row">
+            <span>金額は毎月固定 <small class="muted">家賃など</small></span>
+            <input type="checkbox" name="fixedAmount" class="switch" ${fixedNow ? 'checked' : ''}>
+          </label>
+          <div class="field-row">
+            <label class="field">
+              <span>支払い方法</span>
+              <select name="method">
+                <option value="">未設定</option>
+                ${METHODS.map((m) => `<option ${b.method === m ? 'selected' : ''}>${m}</option>`).join('')}
+                ${b.method && !METHODS.includes(b.method) ? `<option selected>${esc(b.method)}</option>` : ''}
+              </select>
+            </label>
+            <label class="field">
+              <span>支払日（毎月）</span>
+              <select name="payDay">
+                <option value="">未設定</option>
+                ${Array.from({ length: 31 }, (_, i) => i + 1).map((d) => `<option value="${d}" ${String(curPayDay) === String(d) ? 'selected' : ''}>${d}日</option>`).join('')}
+                <option value="end" ${curPayDay === 'end' ? 'selected' : ''}>月末</option>
+              </select>
+            </label>
+          </div>
+          <p class="field-hint muted">支払い方法・支払日・固定の金額は、来月以降にも引き継がれます。</p>
           <fieldset class="field">
             <span>支払う人・支払った人</span>
             <div class="segmented">
@@ -492,10 +587,6 @@ export function mount(el, { store }) {
               </label>
             </div>
           </div>
-          <label class="field">
-            <span>支払期限</span>
-            <input name="dueDate" type="date" value="${b.dueDate || ''}">
-          </label>
           <details class="more" ${isNew ? 'open' : ''}>
             <summary>種類・名前・メモ</summary>
             <div class="cat-picker">
@@ -512,7 +603,7 @@ export function mount(el, { store }) {
             </label>
             <label class="field">
               <span>メモ</span>
-              <input name="note" value="${esc(b.note || '')}" maxlength="100" placeholder="検針期間、口座振替など">
+              <input name="note" value="${esc(b.note || '')}" maxlength="100" placeholder="検針期間など">
             </label>
           </details>
           <footer class="sheet-foot">
@@ -587,7 +678,10 @@ export function mount(el, { store }) {
     });
 
     form.addEventListener('change', (e) => {
-      if (e.target.name === 'category') f.name.placeholder = cat(e.target.value).label;
+      if (e.target.name === 'category') {
+        f.name.placeholder = cat(e.target.value).label;
+        if (isNew) f.fixedAmount.checked = CARRY_AMOUNT.includes(e.target.value);
+      }
       // 精算済みなら支払済みでもある
       if (e.target.name === 'settled' && f.settled.checked) f.paid.checked = true;
       if (e.target.name === 'paid' && !f.paid.checked) f.settled.checked = false;
@@ -616,11 +710,18 @@ export function mount(el, { store }) {
       const category = f.category.value;
       const paid = f.paid.checked;
       const settled = paid && f.settled.checked;
+      const payDay = f.payDay.value === 'end' ? 'end' : Number(f.payDay.value) || null;
+      const recurring = { method: f.method.value || null, payDay, fixedAmount: f.fixedAmount.checked };
+      const recurringChanged = !isNew && (recurring.method !== (b.method || null)
+        || recurring.payDay !== (b.payDay || null)
+        || recurring.fixedAmount !== isFixedAmount(b)
+        || (recurring.fixedAmount && amount !== (b.amount ?? null)));
       const data = {
         category,
         name: f.name.value.trim() || cat(category).label,
         amount,
-        dueDate: f.dueDate.value || null,
+        ...recurring,
+        dueDate: dueDateFor(editMonth, payDay),
         payer: f.payer.value || (paid ? store.user.uid : null),
         paid,
         settled,
@@ -637,6 +738,10 @@ export function mount(el, { store }) {
         const target = ref('months', editMonth, 'bills', billId);
         if (isNew) await setDoc(target, { ...data, order: catIndex(category), createdAt: serverTimestamp() });
         else await updateDoc(target, data);
+        if (recurringChanged) {
+          await applyToLaterMonths(editMonth, billId, { ...recurring, category, amount }, store)
+            .catch((err) => console.error(err));
+        }
         if (files.length) {
           toast('領収書を保存しています');
           await uploadReceipts(files, editMonth, billId, store);
