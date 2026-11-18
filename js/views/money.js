@@ -498,7 +498,7 @@ export function mount(el, { store }) {
             <label class="field"><span>はじめの月</span>${select('from', month)}</label>
             <label class="field"><span>おわりの月</span>${select('to', month)}</label>
           </div>
-          <p class="field-hint muted">2か月以上のときは、はじめに各項目の支払い方法・支払日・毎月のメモをまとめて載せ、そのあと月ごとの金額を載せます。</p>
+          <p class="field-hint muted">2か月以上のときは、各項目の支払い方法・支払日をまとめたあとに、月ごとの合計のグラフと、項目ごとに月を並べた比較表を載せます。</p>
           <footer class="sheet-foot">
             <button type="submit" class="btn btn-primary">${icon('image', 18)}<span>画像を作る</span></button>
           </footer>
@@ -533,12 +533,17 @@ export function mount(el, { store }) {
             : sortBills((await getDocs(col('months', m, 'bills'))).docs.map((d) => ({ id: d.id, ...d.data() }))),
         })));
         const months = loaded.filter((x) => x.bills.length);
+        // 1か月のときは先月比を載せる
+        const prevMonth = months.length === 1 ? shiftMonth(months[0].month, -1) : null;
+        const prev = months.length === 1
+          ? (await getDocs(col('months', prevMonth, 'bills')).catch(() => null))?.docs.map((d) => ({ id: d.id, ...d.data() }))
+          : null;
         if (!months.length) return toast('この期間には項目がありません');
         const first = months[0].month;
         const last = months.at(-1).month;
         const label = first === last ? monthLabel(first) : `${monthLabel(first)}〜${monthLabel(last)}`;
         openImageViewer({
-          thumb: await renderBillsImage({ months, store }),
+          thumb: await renderBillsImage({ months, prev, store }),
           title: `${label}の支払い`,
           subtitle: '右上のボタンから保存・送信できます',
           fileName: first === last ? `futari-${first}.png` : `futari-${first}_${last}.png`,
