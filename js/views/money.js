@@ -17,7 +17,7 @@ export const CATEGORIES = [
   { id: 'other', label: 'その他', icon: 'receipt' },
 ];
 // 毎月かならず用意する項目
-const FIXED = ['rent', 'electricity', 'gas', 'water'];
+export const FIXED = ['rent', 'electricity', 'gas', 'water'];
 // 金額固定の設定がまだない項目で、先月から金額を引き継ぐもの（以前からの動き）
 const CARRY_AMOUNT = ['rent', 'internet'];
 
@@ -40,6 +40,11 @@ export const payDayLabel = (payDay) => (payDay === 'end' ? '毎月末' : payDay 
 
 export const cat = (id) => CATEGORIES.find((c) => c.id === id) || CATEGORIES.at(-1);
 const catIndex = (id) => CATEGORIES.indexOf(cat(id));
+
+// 一覧の並び順
+export const sortBills = (list) => list.sort((a, b) => (a.order ?? 99) - (b.order ?? 99)
+  || catIndex(a.category) - catIndex(b.category)
+  || (a.createdAt?.seconds ?? 0) - (b.createdAt?.seconds ?? 0));
 
 export function shareFor(store, uid) {
   const members = store.memberList();
@@ -125,6 +130,7 @@ async function setupMonth(month, store) {
       fixedAmount: fixed,
       method: b.method || null,
       payDay: b.payDay || null,
+      fixedNote: b.fixedNote || '',
       payer: b.payer || null,
       dueDate: b.payDay ? dueDateFor(month, b.payDay) : day ? `${month}-${String(day).padStart(2, '0')}` : null,
       note: '',
@@ -134,7 +140,7 @@ async function setupMonth(month, store) {
   FIXED.forEach((c) => {
     items[c] ??= {
       category: c, name: cat(c).label, amount: null, fixedAmount: CARRY_AMOUNT.includes(c), method: null, payDay: null,
-      payer: null, dueDate: null, note: '', order: catIndex(c),
+      fixedNote: '', payer: null, dueDate: null, note: '', order: catIndex(c),
     };
   });
 
@@ -214,7 +220,7 @@ async function deleteReceipt(r) {
   await batch.commit();
 }
 
-// 支払い方法・支払日・固定金額を変えたら、すでに作られている先の月（未払いのもの）にも反映する
+// 支払い方法・支払日・固定金額・毎月のメモを変えたら、すでに作られている先の月（未払いのもの）にも反映する
 async function applyToLaterMonths(month, billId, bill, store) {
   const later = (await getDocs(col('months'))).docs.map((d) => d.id).filter((m) => m > month);
   if (!later.length) return;
@@ -229,6 +235,7 @@ async function applyToLaterMonths(month, billId, bill, store) {
       method: bill.method,
       payDay: bill.payDay,
       fixedAmount: bill.fixedAmount,
+      fixedNote: bill.fixedNote,
       ...(bill.payDay ? { dueDate: dueDateFor(m, bill.payDay) } : {}),
       ...(bill.fixedAmount ? { amount: bill.amount } : {}),
       updatedAt: serverTimestamp(), updatedBy: store.user.uid,
@@ -303,10 +310,7 @@ export function mount(el, { store }) {
     const opts = { includeMetadataChanges: true };
     unsubMonth = [
       onSnapshot(billsRef(), opts, (snap) => {
-        bills = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
-          .sort((a, b) => (a.order ?? 99) - (b.order ?? 99)
-            || catIndex(a.category) - catIndex(b.category)
-            || (a.createdAt?.seconds ?? 0) - (b.createdAt?.seconds ?? 0));
+        bills = sortBills(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
         // キャッシュだけの結果では「空」と判断しない
         if (!snap.metadata.fromCache) loaded.bills = true;
         render();
@@ -441,7 +445,8 @@ export function mount(el, { store }) {
             <span class="bill-main">
               <span class="bill-name">${esc(b.name || c.label)}</span>
               <span class="bill-meta">${meta}</span>
-              ${b.note ? `<span class="bill-note">${esc(b.note)}</span>` : ''}
+              ${b.fixedNote ? `<span class="bill-note"><b>毎月</b>${esc(b.fixedNote)}</span>` : ''}
+              ${b.note ? `<span class="bill-note"><b>この月</b>${esc(b.note)}</span>` : ''}
             </span>
             <span class="bill-amount">
               ${b.amount ? yen(b.amount) : '<span class="muted">金額を入力</span>'}
@@ -451,7 +456,7 @@ export function mount(el, { store }) {
           </button>
         </article>`;
     }).join('') + `
-      <button class="btn image-btn" data-act="image">${icon('download', 18)}<span>この月の一覧を画像で保存・送る</span></button>
+      <button class="btn image-btn" data-act="image">${icon('download', 18)}<span>一覧を画像で保存・送る</span></button>
       <p class="updated muted">${lastUpdated()}</p>`;
   }
 
@@ -465,22 +470,86 @@ export function mount(el, { store }) {
 
   const stamp = () => ({ updatedAt: serverTimestamp(), updatedBy: store.user.uid });
 
-  // その月の支払い一覧を、人に送れる画像にする
-  async function saveImage() {
-    if (!bills.length) return;
-    try {
-      const data = await renderBillsImage({ month, bills, store });
-      openImageViewer({
-        thumb: data,
-        title: `${monthLabel(month)}の支払い`,
-        subtitle: '右上のボタンから保存・送信できます',
-        fileName: `futari-${month}.png`,
-        scroll: true,
-      });
-    } catch (err) {
-      console.error(err);
-      toast('画像を作れませんでした');
-    }
+  // 支払い一覧を、人に送れる画像にする（1か月〜12か月）
+  function saveImage() {
+    const now = monthKey();
+    const options = Array.from({ length: 27 }, (_, i) => shiftMonth(now, 2 - i));
+    if (!options.includes(month)) options.push(month);
+    options.sort().reverse();
+    const select = (name, value) => `
+      <select name="${name}">
+        ${options.map((m) => `<option value="${m}" ${m === value ? 'selected' : ''}>${monthLabel(m)}</option>`).join('')}
+      </select>`;
+    const dlg = h(`
+      <dialog class="sheet">
+        <form method="dialog">
+          <header class="sheet-head">
+            <h2>画像で保存・送る</h2>
+            <button type="button" class="icon-btn" data-close aria-label="閉じる">${icon('close')}</button>
+          </header>
+          <fieldset class="field">
+            <span>期間</span>
+            <div class="segmented">
+              ${[[1, 'この月'], [3, '3か月'], [6, '6か月'], [12, '12か月']].map(([n, label]) => `
+                <label><input type="radio" name="span" value="${n}" ${n === 1 ? 'checked' : ''}><span>${label}</span></label>`).join('')}
+            </div>
+          </fieldset>
+          <div class="field-row">
+            <label class="field"><span>はじめの月</span>${select('from', month)}</label>
+            <label class="field"><span>おわりの月</span>${select('to', month)}</label>
+          </div>
+          <p class="field-hint muted">2か月以上のときは、はじめに各項目の支払い方法・支払日・毎月のメモをまとめて載せ、そのあと月ごとの金額を載せます。</p>
+          <footer class="sheet-foot">
+            <button type="submit" class="btn btn-primary">${icon('image', 18)}<span>画像を作る</span></button>
+          </footer>
+        </form>
+      </dialog>`);
+    document.body.appendChild(dlg);
+    const form = dlg.querySelector('form');
+    const f = form.elements;
+    form.addEventListener('change', (e) => {
+      if (e.target.name === 'span') {
+        f.to.value = month;
+        f.from.value = shiftMonth(month, 1 - Number(e.target.value));
+      } else {
+        form.querySelectorAll('[name=span]').forEach((r) => { r.checked = false; });
+      }
+    });
+    dlg.querySelector('[data-close]').addEventListener('click', () => dlg.close());
+    dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+    dlg.addEventListener('close', () => dlg.remove());
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      let [from, to] = [f.from.value, f.to.value];
+      if (from > to) [from, to] = [to, from];
+      const range = [];
+      for (let m = from; m <= to && range.length < 12; m = shiftMonth(m, 1)) range.push(m);
+      if (range.at(-1) !== to) toast('12か月までにしました');
+      dlg.close();
+      try {
+        const loaded = await Promise.all(range.map(async (m) => ({
+          month: m,
+          bills: m === month ? bills
+            : sortBills((await getDocs(col('months', m, 'bills'))).docs.map((d) => ({ id: d.id, ...d.data() }))),
+        })));
+        const months = loaded.filter((x) => x.bills.length);
+        if (!months.length) return toast('この期間には項目がありません');
+        const first = months[0].month;
+        const last = months.at(-1).month;
+        const label = first === last ? monthLabel(first) : `${monthLabel(first)}〜${monthLabel(last)}`;
+        openImageViewer({
+          thumb: await renderBillsImage({ months, store }),
+          title: `${label}の支払い`,
+          subtitle: '右上のボタンから保存・送信できます',
+          fileName: first === last ? `futari-${first}.png` : `futari-${first}_${last}.png`,
+          scroll: true,
+        });
+      } catch (err) {
+        console.error(err);
+        toast('画像を作れませんでした');
+      }
+    });
+    dlg.showModal();
   }
 
   async function togglePaid(b) {
@@ -556,7 +625,15 @@ export function mount(el, { store }) {
               </select>
             </label>
           </div>
-          <p class="field-hint muted">支払い方法・支払日・固定の金額は、来月以降にも引き継がれます。</p>
+          <label class="field">
+            <span>メモ（毎月共通）</span>
+            <input name="fixedNote" value="${esc(b.fixedNote || '')}" maxlength="100" placeholder="引き落とし口座、契約番号など">
+          </label>
+          <p class="field-hint muted">支払い方法・支払日・固定の金額・毎月共通のメモは、来月以降にも引き継がれます。</p>
+          <label class="field">
+            <span>メモ（この月だけ）</span>
+            <input name="note" value="${esc(b.note || '')}" maxlength="100" placeholder="検針期間、今月だけの事情など">
+          </label>
           <fieldset class="field">
             <span>支払う人・支払った人</span>
             <div class="segmented">
@@ -588,7 +665,7 @@ export function mount(el, { store }) {
             </div>
           </div>
           <details class="more" ${isNew ? 'open' : ''}>
-            <summary>種類・名前・メモ</summary>
+            <summary>種類・名前</summary>
             <div class="cat-picker">
               ${CATEGORIES.map((c) => `
                 <label class="cat-option">
@@ -600,10 +677,6 @@ export function mount(el, { store }) {
             <label class="field">
               <span>名前</span>
               <input name="name" value="${esc(b.name || '')}" placeholder="${esc(cat(b.category).label)}" maxlength="40">
-            </label>
-            <label class="field">
-              <span>メモ</span>
-              <input name="note" value="${esc(b.note || '')}" maxlength="100" placeholder="検針期間など">
             </label>
           </details>
           <footer class="sheet-foot">
@@ -711,10 +784,13 @@ export function mount(el, { store }) {
       const paid = f.paid.checked;
       const settled = paid && f.settled.checked;
       const payDay = f.payDay.value === 'end' ? 'end' : Number(f.payDay.value) || null;
-      const recurring = { method: f.method.value || null, payDay, fixedAmount: f.fixedAmount.checked };
+      const recurring = {
+        method: f.method.value || null, payDay, fixedAmount: f.fixedAmount.checked, fixedNote: f.fixedNote.value.trim(),
+      };
       const recurringChanged = !isNew && (recurring.method !== (b.method || null)
         || recurring.payDay !== (b.payDay || null)
         || recurring.fixedAmount !== isFixedAmount(b)
+        || recurring.fixedNote !== (b.fixedNote || '')
         || (recurring.fixedAmount && amount !== (b.amount ?? null)));
       const data = {
         category,
